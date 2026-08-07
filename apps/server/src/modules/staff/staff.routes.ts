@@ -22,10 +22,16 @@ router.get(
       const skip = (page - 1) * limit;
       const search = req.query.search as string | undefined;
 
+      const staffRoles = [
+        Role.TEACHER,
+        Role.FINANCE,
+        Role.ADMIN,
+        Role.SUPER_ADMIN,
+      ];
+
       const where = {
         schoolId: req.user.schoolId,
-        role: Role.TEACHER,
-        isActive: true,
+        role: { in: staffRoles },
         ...(search && {
           OR: [
             { firstName: { contains: search, mode: "insensitive" as const } },
@@ -35,7 +41,7 @@ router.get(
         }),
       };
 
-      const [teachers, total] = await Promise.all([
+      const [staff, total] = await Promise.all([
         db.user.findMany({
           where,
           skip,
@@ -44,9 +50,11 @@ router.get(
             id: true,
             firstName: true,
             lastName: true,
+            role: true,
             email: true,
             phone: true,
             avatar: true,
+            isActive: true,
             teacherProfile: {
               include: {
                 classTeacherOf: { select: { name: true } },
@@ -58,12 +66,15 @@ router.get(
                 },
               },
             },
+            adminProfile: {
+              select: { department: true, isSuperAdmin: true },
+            },
           },
           orderBy: { firstName: "asc" },
         }),
         db.user.count({ where }),
       ]);
-      sendSuccess(res, teachers, "OK", 200, paginationMeta(total, page, limit));
+      sendSuccess(res, staff, "OK", 200, paginationMeta(total, page, limit));
     } catch (e) {
       next(e);
     }

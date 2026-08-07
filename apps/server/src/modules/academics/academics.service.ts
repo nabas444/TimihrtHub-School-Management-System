@@ -826,6 +826,19 @@ export const createClass = async (
     room?: string;
   },
 ) => {
+  if (!data.gradeLevelId?.trim()) {
+    throw new AppError("Grade level is required", 400);
+  }
+
+  const gradeLevel = await db.gradeLevel.findUnique({
+    where: { id: data.gradeLevelId },
+    select: { schoolId: true },
+  });
+
+  if (!gradeLevel || gradeLevel.schoolId !== schoolId) {
+    throw new AppError("Grade level not found", 404);
+  }
+
   return db.class.create({ data: { schoolId, ...data } });
 };
 

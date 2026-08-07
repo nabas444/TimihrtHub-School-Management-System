@@ -249,6 +249,13 @@ export const createUser = async (
       teacherProfile: { select: { id: true, employeeId: true } },
     },
   });
+  
+  // Invalidate dashboard cache so admin KPI counts update
+  try {
+    await cacheDel(`dashboard:${schoolId}`);
+  } catch (e) {
+    // non-fatal — don't block user creation if cache can't be cleared
+  }
 
   return user;
 };
@@ -306,6 +313,16 @@ export const toggleUserStatus = async (id: string, schoolId: string) => {
 
   await cacheDel(`user:${id}`);
   return updated;
+};
+
+// ── Delete user ──────────────────────────────────────────────────────────────
+export const deleteUser = async (id: string, schoolId: string) => {
+  const user = await db.user.findFirst({ where: { id, schoolId } });
+  if (!user) throw new AppError("User not found", 404);
+
+  await db.user.delete({ where: { id } });
+  await cacheDel(`user:${id}`);
+  return { success: true };
 };
 
 // ── Bulk create students (CSV import) ────────────────────────────────────────
