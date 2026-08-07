@@ -1,0 +1,30 @@
+{
+  "name": "timhirthub",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TimhirtHub — School Management Platform",
+  "workspaces": [
+    "apps/web",
+    "apps/server"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:web\"",
+    "dev:server": "npm run dev --workspace=apps/server",
+    "dev:web": "npm run dev --workspace=apps/web",
+    "build": "npm run build --workspace=apps/server && npm run build --workspace=apps/web",
+    "test": "npm run test --workspace=apps/server",
+    "test:coverage": "npm run test:coverage --workspace=apps/server",
+    "db:migrate": "npm run prisma:migrate --workspace=apps/server",
+    "db:seed": "npm run prisma:seed --workspace=apps/server",
+    "db:studio": "npm run prisma:studio --workspace=apps/server",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=9.0.0"
+  }
+}
