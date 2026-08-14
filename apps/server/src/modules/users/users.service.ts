@@ -15,9 +15,10 @@ export const listUsers = async (
     page: number;
     limit: number;
     isActive?: boolean;
+    classIds?: string[];
   },
 ) => {
-  const { role, search, page, limit, isActive } = params;
+  const { role, search, page, limit, isActive, classIds } = params;
   const skip = (page - 1) * limit;
 
   const where = {
@@ -31,6 +32,12 @@ export const listUsers = async (
         { email: { contains: search, mode: "insensitive" as const } },
       ],
     }),
+    // If classIds provided and we're filtering students, restrict to those student profiles
+    ...(classIds && classIds.length > 0
+      ? {
+          studentProfile: { is: { classId: { in: classIds } } },
+        }
+      : {}),
   };
 
   const [users, total] = await Promise.all([
@@ -58,6 +65,7 @@ export const listUsers = async (
             admissionNumber: true,
             rollNumber: true,
             classId: true,
+            class: { select: { id: true, name: true } },
           },
         },
         teacherProfile: {
@@ -128,7 +136,8 @@ export const getUserById = async (id: string, schoolId: string) => {
       },
       teacherProfile: {
         include: {
-          classTeacherOf: { select: { id: true, name: true } },
+          // assignedClasses is the many-to-many relation for classes assigned to the teacher
+          assignedClasses: { select: { id: true, name: true } },
           subjectTeachings: {
             include: {
               subject: { select: { id: true, name: true } },
@@ -176,8 +185,10 @@ export const createUser = async (
     address?: string;
     // Student-specific
     admissionNumber?: string;
+    rollNumber?: string;
     classId?: string;
     gradeLevelId?: string;
+    classIds?: string[];
     // Teacher-specific
     employeeId?: string;
     qualification?: string;
@@ -185,6 +196,7 @@ export const createUser = async (
     // Parent-specific
     occupation?: string;
     relation?: string;
+    studentIds?: string[];
     // Admin-specific
     department?: string;
   },
@@ -196,7 +208,29 @@ export const createUser = async (
 
   const hashedPassword = await bcrypt.hash(data.password, SALT_ROUNDS);
 
-  const user = await db.user.create({
+  let parentStudentProfileIds: string[] = [];
+  if (
+    data.role === Role.PARENT &&
+    data.studentIds &&
+    data.studentIds.length > 0
+  ) {
+    const uniqueStudentIds = Array.from(new Set(data.studentIds));
+    const studentUsers = await db.user.findMany({
+      where: {
+        id: { in: uniqueStudentIds },
+        schoolId,
+        role: Role.STUDENT,
+      },
+      include: { studentProfile: true },
+    });
+    if (studentUsers.length !== uniqueStudentIds.length) {
+      throw new AppError("One or more students not found", 404);
+    }
+    parentStudentProfileIds = studentUsers.map((u) => u.studentProfile!.id);
+  }
+
+  // Build create payload so we can retry without grade connect if DB doesn't support it yet
+  const createPayload: any = {
     data: {
       schoolId,
       role: data.role,
@@ -213,6 +247,7 @@ export const createUser = async (
         studentProfile: {
           create: {
             admissionNumber: data.admissionNumber ?? `STU${Date.now()}`,
+            rollNumber: data.rollNumber,
             classId: data.classId,
             gradeLevelId: data.gradeLevelId,
           },
@@ -224,12 +259,32 @@ export const createUser = async (
             employeeId: data.employeeId ?? `TCH${Date.now()}`,
             qualification: data.qualification,
             specialization: data.specialization,
+            // connect assigned classes if provided (many-to-many)
+            ...(data.classIds && data.classIds.length > 0
+              ? {
+                  assignedClasses: {
+                    connect: data.classIds.map((id) => ({ id })),
+                  },
+                }
+              : {}),
           },
         },
       }),
       ...(data.role === Role.PARENT && {
         parentProfile: {
-          create: { occupation: data.occupation, relation: data.relation },
+          create: {
+            occupation: data.occupation,
+            relation: data.relation,
+            ...(parentStudentProfileIds.length > 0
+              ? {
+                  studentLinks: {
+                    create: parentStudentProfileIds.map((studentProfileId) => ({
+                      studentProfileId,
+                    })),
+                  },
+                }
+              : {}),
+          },
         },
       }),
       ...(data.role === Role.ADMIN && {
@@ -248,8 +303,63 @@ export const createUser = async (
       studentProfile: { select: { id: true, admissionNumber: true } },
       teacherProfile: { select: { id: true, employeeId: true } },
     },
-  });
-  
+  };
+
+  let user: any;
+  try {
+    user = await db.user.create(createPayload);
+  } catch (err: any) {
+    // Fallbacks for missing relations in DB schema: try to recover so user
+    // creation still succeeds even if migrations haven't been applied.
+    const msg = String(err?.message ?? "").toLowerCase();
+
+    // If assignedClasses (many-to-many) failed, remove it and retry,
+    // then attach classes in a separate update if possible.
+    if (
+      data.classIds &&
+      data.classIds.length > 0 &&
+      (msg.includes("assignedclasses") ||
+        msg.includes("assigned_classes") ||
+        msg.includes("class_teacher") ||
+        msg.includes("teacher_profiles") ||
+        msg.includes("column"))
+    ) {
+      if (createPayload.data.teacherProfile?.create?.assignedClasses) {
+        delete createPayload.data.teacherProfile.create.assignedClasses;
+      }
+      user = await db.user.create(createPayload);
+
+      // Try to attach assigned classes after the fact.
+      try {
+        const teacherProfileId = user.teacherProfile?.id;
+        if (teacherProfileId) {
+          await db.teacherProfile.update({
+            where: { id: teacherProfileId },
+            data: {
+              assignedClasses: { connect: data.classIds.map((id) => ({ id })) },
+            },
+          });
+        }
+      } catch (e) {
+        // non-fatal — if this fails, return the created user without assigned classes
+      }
+    } else if (
+      data.gradeLevelId &&
+      (msg.includes("gradelevel") ||
+        msg.includes("grade_level") ||
+        msg.includes("teacher_profiles") ||
+        msg.includes("column"))
+    ) {
+      // previous fallback: remove nested grade connect and retry
+      if (createPayload.data.teacherProfile?.create?.gradeLevel) {
+        delete createPayload.data.teacherProfile.create.gradeLevel;
+      }
+      user = await db.user.create(createPayload);
+    } else {
+      throw err;
+    }
+  }
+
   // Invalidate dashboard cache so admin KPI counts update
   try {
     await cacheDel(`dashboard:${schoolId}`);
@@ -271,17 +381,28 @@ export const updateUser = async (
     gender: Gender;
     dateOfBirth: Date;
     address: string;
-    avatar: string;
+    avatar: string | null;
     isActive: boolean;
     smsOptIn: boolean;
+    rollNumber: string;
   }>,
 ) => {
   const user = await db.user.findFirst({ where: { id, schoolId } });
   if (!user) throw new AppError("User not found", 404);
 
+  const updateData: any = { ...data };
+  if (data.rollNumber !== undefined) {
+    delete updateData.rollNumber;
+    updateData.studentProfile = {
+      update: {
+        rollNumber: data.rollNumber,
+      },
+    };
+  }
+
   const updated = await db.user.update({
     where: { id },
-    data,
+    data: updateData,
     select: {
       id: true,
       firstName: true,

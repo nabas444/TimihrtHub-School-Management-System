@@ -35,7 +35,26 @@ export const createSubject = async (
     where: { schoolId_code: { schoolId, code: data.code } },
   });
   if (exists) throw new AppError("Subject code already exists", 409);
-  return db.subject.create({ data: { schoolId, ...data } });
+
+  return db.subject.create({
+    data: {
+      schoolId,
+      name: data.name,
+      code: data.code,
+      description: data.description,
+      creditHours: data.creditHours,
+      isCore: data.isCore,
+    },
+  });
+};
+
+export const deleteSubject = async (schoolId: string, subjectId: string) => {
+  const subject = await db.subject.findFirst({
+    where: { id: subjectId, schoolId },
+  });
+  if (!subject) throw new AppError("Subject not found", 404);
+  await db.subject.delete({ where: { id: subjectId } });
+  return { id: subjectId };
 };
 
 // ════════════════════════════════════════════════════════════
@@ -865,4 +884,85 @@ export const createTerm = async (
     });
   }
   return db.academicTerm.create({ data: { schoolId, ...data } });
+};
+
+// ── Class management (newly added) ───────────────────────────────────────────
+export const getClassById = async (schoolId: string, classId: string) => {
+  const klass = await db.class.findFirst({
+    where: { id: classId, schoolId },
+    include: {
+      gradeLevel: { select: { id: true, name: true, level: true } },
+      classTeacher: {
+        include: {
+          user: {
+            select: { id: true, firstName: true, lastName: true, email: true },
+          },
+        },
+      },
+      students: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              avatar: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!klass) throw new AppError("Class not found", 404);
+  return klass;
+};
+
+export const updateClass = async (
+  schoolId: string,
+  classId: string,
+  data: {
+    gradeLevelId?: string;
+    name?: string;
+    academicYear?: string;
+    capacity?: number;
+    room?: string;
+  },
+) => {
+  const klass = await db.class.findFirst({ where: { id: classId, schoolId } });
+  if (!klass) throw new AppError("Class not found", 404);
+
+  if (data.gradeLevelId) {
+    const gradeLevel = await db.gradeLevel.findUnique({
+      where: { id: data.gradeLevelId },
+      select: { schoolId: true },
+    });
+
+    if (!gradeLevel || gradeLevel.schoolId !== schoolId) {
+      throw new AppError("Grade level not found", 404);
+    }
+  }
+
+  return db.class.update({
+    where: { id: classId },
+    data,
+    include: {
+      gradeLevel: { select: { id: true, name: true, level: true } },
+      classTeacher: {
+        include: {
+          user: { select: { id: true, firstName: true, lastName: true } },
+        },
+      },
+      _count: { select: { students: true } },
+    },
+  });
+};
+
+export const deleteClass = async (schoolId: string, classId: string) => {
+  const klass = await db.class.findFirst({ where: { id: classId, schoolId } });
+  if (!klass) throw new AppError("Class not found", 404);
+
+  await db.class.delete({ where: { id: classId } });
+  return { success: true };
 };

@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from "express";
 import { z } from "zod";
 import multer from "multer";
 import path from "path";
+import os from "os";
 import fs from "fs/promises";
 import { v2 as cloudinary } from "cloudinary";
 import { db } from "../../config/database";
@@ -11,11 +12,38 @@ import { authorize } from "../../middleware/auth";
 import { logger } from "../../utils/logger";
 import { Role } from "@prisma/client";
 
-const UPLOAD_DIR = "/tmp/uploads";
-const CLOUDINARY_ENABLED = Boolean(process.env.CLOUDINARY_URL);
+const UPLOAD_DIR = path.join(os.tmpdir(), "timhirthub", "uploads");
+const CLOUDINARY_URL = process.env.CLOUDINARY_URL?.trim();
+const CLOUDINARY_ENABLED = Boolean(CLOUDINARY_URL);
+
+fs.mkdir(UPLOAD_DIR, { recursive: true }).catch(() => null);
 
 if (CLOUDINARY_ENABLED) {
-  cloudinary.config({ secure: true });
+  try {
+    const url = new URL(CLOUDINARY_URL);
+    const api_key = url.username;
+    const api_secret = url.password;
+    const cloud_name = url.hostname;
+
+    if (api_key && api_secret && cloud_name) {
+      cloudinary.config({
+        secure: true,
+        api_key,
+        api_secret,
+        cloud_name,
+      });
+    } else {
+      cloudinary.config({
+        secure: true,
+        cloudinary_url: CLOUDINARY_URL,
+      });
+    }
+  } catch {
+    cloudinary.config({
+      secure: true,
+      cloudinary_url: CLOUDINARY_URL,
+    });
+  }
 }
 
 const deleteStoredFile = async (fileUrl: string) => {

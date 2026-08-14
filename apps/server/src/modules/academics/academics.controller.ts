@@ -40,6 +40,19 @@ export const createSubject = async (
   }
 };
 
+export const deleteSubject = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    await AcademicsService.deleteSubject(req.user.schoolId, req.params.id);
+    sendSuccess(res, null, "Subject deleted");
+  } catch (e) {
+    next(e);
+  }
+};
+
 // ── Classes ───────────────────────────────────────────────────────────────────
 export const listClasses = async (
   req: Request,
@@ -71,6 +84,65 @@ export const createClass = async (
       res,
       await AcademicsService.createClass(req.user.schoolId, data),
     );
+  } catch (e) {
+    next(e);
+  }
+};
+
+export const getClass = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const klass = await AcademicsService.getClassById(
+      req.user.schoolId,
+      req.params.id,
+    );
+    sendSuccess(res, klass);
+  } catch (e) {
+    next(e);
+  }
+};
+
+export const updateClass = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const data = z
+      .object({
+        gradeLevelId: z.string().min(1).optional(),
+        name: z.string().min(1).optional(),
+        academicYear: z.string().optional(),
+        capacity: z.number().optional(),
+        room: z.string().optional(),
+      })
+      .parse(req.body);
+
+    const klass = await AcademicsService.updateClass(
+      req.user.schoolId,
+      req.params.id,
+      data,
+    );
+    sendSuccess(res, klass, "Class updated");
+  } catch (e) {
+    next(e);
+  }
+};
+
+export const deleteClass = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const result = await AcademicsService.deleteClass(
+      req.user.schoolId,
+      req.params.id,
+    );
+    sendSuccess(res, result, "Class deleted");
   } catch (e) {
     next(e);
   }

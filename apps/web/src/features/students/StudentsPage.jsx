@@ -33,14 +33,74 @@ export default function StudentsPage() {
     password: "Welcome@123",
     admissionNumber: "",
     classId: "",
+    gender: "",
+    age: "",
+    rollNumber: "",
+  });
+
+  const buildStudentCreatePayload = () => {
+    const payload = {
+      firstName: form.firstName.trim(),
+      lastName: form.lastName.trim(),
+      email: form.email.trim(),
+      password: form.password,
+      admissionNumber: form.admissionNumber?.trim() || undefined,
+      classId: form.classId || undefined,
+      gender: form.gender || undefined,
+      rollNumber: form.rollNumber?.trim() || undefined,
+    };
+
+    if (form.age) {
+      const ageNumber = Number(form.age);
+      if (!Number.isNaN(ageNumber)) {
+        const birthYear = new Date().getFullYear() - ageNumber;
+        payload.dateOfBirth = new Date(birthYear, 0, 1).toISOString();
+      }
+    }
+
+    return payload;
+  };
+
+  const buildStudentUpdatePayload = () => {
+    const payload = {
+      firstName: form.firstName.trim(),
+      lastName: form.lastName.trim(),
+      email: form.email.trim(),
+      gender: form.gender || undefined,
+      rollNumber: form.rollNumber?.trim() || undefined,
+    };
+
+    if (form.age) {
+      const ageNumber = Number(form.age);
+      if (!Number.isNaN(ageNumber)) {
+        const birthYear = new Date().getFullYear() - ageNumber;
+        payload.dateOfBirth = new Date(birthYear, 0, 1).toISOString();
+      }
+    }
+
+    return payload;
+  };
+
+  // Fetch current user's full profile (used to determine teacher's assigned classes)
+  const { data: meData } = useQuery({
+    queryKey: ["me"],
+    queryFn: () => api.get("/users/me").then((r) => r.data.data),
+    staleTime: 1000 * 60 * 5,
   });
 
   const { data, isLoading } = useQuery({
-    queryKey: ["users", "STUDENT", page, search],
-    queryFn: () =>
-      api
-        .get(`/users?role=STUDENT&page=${page}&limit=20&search=${search}`)
-        .then((r) => r.data),
+    queryKey: ["users", "STUDENT", page, search, meData?.id],
+    queryFn: () => {
+      // build URL and include classIds if current user is a teacher
+      const me = meData;
+      let url = `/users?role=STUDENT&page=${page}&limit=20&search=${encodeURIComponent(search)}`;
+      if (me?.role === "TEACHER") {
+        const classIds =
+          me?.teacherProfile?.assignedClasses?.map((c) => c.id) || [];
+        if (classIds.length > 0) url += `&classIds=${classIds.join(",")}`;
+      }
+      return api.get(url).then((r) => r.data);
+    },
     keepPreviousData: true,
   });
 
@@ -62,6 +122,9 @@ export default function StudentsPage() {
         password: "Welcome@123",
         admissionNumber: "",
         classId: "",
+        gender: "",
+        age: "",
+        rollNumber: "",
       });
     },
   });
@@ -104,6 +167,17 @@ export default function StudentsPage() {
       firstName: student.firstName,
       lastName: student.lastName,
       email: student.email,
+      password: "Welcome@123",
+      admissionNumber: student.studentProfile?.admissionNumber ?? "",
+      classId: student.studentProfile?.classId ?? "",
+      gender: student.gender ?? "",
+      age: student.dateOfBirth
+        ? String(
+            new Date().getFullYear() -
+              new Date(student.dateOfBirth).getFullYear(),
+          )
+        : "",
+      rollNumber: student.studentProfile?.rollNumber ?? "",
     });
     setEditOpen(true);
   };
@@ -236,33 +310,39 @@ export default function StudentsPage() {
                           <MoreVertical className="w-4 h-4" />
                         </button>
                         {menuOpen === s.id && (
-                          <div className="absolute right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-max">
+                          <div className="absolute right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 flex items-center gap-2 p-1 whitespace-nowrap">
                             <button
-                              className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100"
+                              className="btn-ghost p-2 text-sm flex items-center gap-2"
                               onClick={() => {
                                 handleEditOpen(s);
                                 setMenuOpen(null);
                               }}
+                              title="Edit"
                             >
                               Edit
                             </button>
                             <button
-                              className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 flex items-center gap-2"
+                              className="btn-ghost p-2 text-sm flex items-center gap-2"
                               onClick={() => {
                                 toggleStatusMutation.mutate(s.id);
                               }}
+                              title={s.isActive ? "Deactivate" : "Activate"}
                             >
-                              <Power className="w-4 h-4" />{" "}
-                              {s.isActive ? "Deactivate" : "Activate"}
+                              <Power className="w-4 h-4" />
+                              <span className="sr-only">
+                                {s.isActive ? "Deactivate" : "Activate"}
+                              </span>
                             </button>
                             <button
-                              className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                              className="btn-ghost p-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
                               onClick={() => {
                                 if (confirm("Delete this student?"))
                                   deleteMutation.mutate(s.id);
                               }}
+                              title="Delete"
                             >
-                              <Trash2 className="w-4 h-4" /> Delete
+                              <Trash2 className="w-4 h-4" />
+                              <span className="sr-only">Delete</span>
                             </button>
                           </div>
                         )}
@@ -307,8 +387,8 @@ export default function StudentsPage() {
               className="btn-primary"
               onClick={() =>
                 selectedStudent
-                  ? updateMutation.mutate(form)
-                  : createMutation.mutate({ ...form, role: "STUDENT" })
+                  ? updateMutation.mutate(buildStudentUpdatePayload())
+                  : createMutation.mutate(buildStudentCreatePayload())
               }
               disabled={
                 selectedStudent
@@ -357,6 +437,40 @@ export default function StudentsPage() {
               onChange={set("email")}
               required
             />
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="label">Sex</label>
+              <select
+                className="input"
+                value={form.gender}
+                onChange={set("gender")}
+              >
+                <option value="">— Select sex —</option>
+                <option value="MALE">Male</option>
+                <option value="FEMALE">Female</option>
+              </select>
+            </div>
+            <div>
+              <label className="label">Age</label>
+              <input
+                className="input"
+                type="number"
+                min="1"
+                value={form.age}
+                onChange={set("age")}
+                placeholder="Optional"
+              />
+            </div>
+            <div>
+              <label className="label">Roll number</label>
+              <input
+                className="input"
+                value={form.rollNumber}
+                onChange={set("rollNumber")}
+                placeholder="Optional"
+              />
+            </div>
           </div>
           {!selectedStudent && (
             <>

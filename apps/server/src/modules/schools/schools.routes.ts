@@ -279,38 +279,13 @@ router.get(
     try {
       const schoolId = req.user.schoolId;
 
-      // Fetch all grade levels for this school
-      const allLevels = await db.gradeLevel.findMany({
+      // Fetch existing grade levels for this school only (do not auto-create)
+      const levels = await db.gradeLevel.findMany({
         where: { schoolId },
         include: { _count: { select: { students: true, classes: true } } },
+        orderBy: { level: "asc" },
       });
-
-      // Deduplicate by level in memory (keep first occurrence)
-      const levelMap = new Map<number, any>();
-      for (const level of allLevels) {
-        if (!levelMap.has(level.level)) {
-          levelMap.set(level.level, level);
-        }
-      }
-
-      const cleanLevels = Array.from(levelMap.values());
-      const existingLevels = new Set(cleanLevels.map((g) => g.level));
-
-      // Create missing grades 1-12
-      for (let i = 1; i <= 12; i++) {
-        if (!existingLevels.has(i)) {
-          const created = await db.gradeLevel.create({
-            data: { schoolId, name: `Grade ${i}`, level: i },
-            include: { _count: { select: { students: true, classes: true } } },
-          });
-          cleanLevels.push(created);
-        }
-      }
-
-      // Sort by level ascending
-      cleanLevels.sort((a, b) => a.level - b.level);
-
-      sendSuccess(res, cleanLevels);
+      sendSuccess(res, levels);
     } catch (e) {
       next(e);
     }

@@ -29,17 +29,47 @@ export default function StaffPage() {
     employeeId: "",
     qualification: "",
     specialization: "",
+    classIds: [],
+    studentIds: [],
     role: "TEACHER",
+  });
+  const [activeRole, setActiveRole] = useState("ALL");
+
+  const roleTabs = [
+    { label: "All", value: "ALL" },
+    { label: "Teachers", value: "TEACHER" },
+    { label: "Parents", value: "PARENT" },
+    { label: "Finance", value: "FINANCE" },
+    { label: "Admins", value: "ADMIN" },
+    { label: "Super Admins", value: "SUPER_ADMIN" },
+  ];
+
+  const { data: studentOptionsData } = useQuery({
+    queryKey: ["student-options"],
+    queryFn: () =>
+      api.get("/users?role=STUDENT&page=1&limit=200").then((r) => r.data.data),
+    staleTime: 1000 * 60 * 5,
   });
 
   const { data, isLoading } = useQuery({
-    queryKey: ["staff", page, search],
-    queryFn: () =>
-      api
-        .get(`/staff/teachers?page=${page}&limit=15&search=${search}`)
-        .then((r) => r.data),
+    queryKey: ["staff", page, search, activeRole],
+    queryFn: () => {
+      const roleParam = activeRole === "ALL" ? "" : `&role=${activeRole}`;
+      return api
+        .get(
+          `/staff/teachers?page=${page}&limit=15&search=${search}${roleParam}`,
+        )
+        .then((r) => r.data);
+    },
     keepPreviousData: true,
   });
+
+  const { data: classesData } = useQuery({
+    queryKey: ["classes"],
+    queryFn: () => api.get("/academics/classes").then((r) => r.data.data),
+  });
+
+  const classes = classesData ?? [];
 
   const createMutation = useMutation({
     mutationFn: (d) => api.post("/users", d),
@@ -55,6 +85,8 @@ export default function StaffPage() {
         employeeId: "",
         qualification: "",
         specialization: "",
+        classIds: [],
+        studentIds: [],
         role: "TEACHER",
       });
     },
@@ -83,6 +115,24 @@ export default function StaffPage() {
   const meta = data?.meta ?? {};
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
+  const toggleClass = (classId) => {
+    setForm((f) => {
+      const ids = new Set(f.classIds || []);
+      if (ids.has(classId)) ids.delete(classId);
+      else ids.add(classId);
+      return { ...f, classIds: Array.from(ids) };
+    });
+  };
+
+  const toggleStudent = (studentId) => {
+    setForm((f) => {
+      const ids = new Set(f.studentIds || []);
+      if (ids.has(studentId)) ids.delete(studentId);
+      else ids.add(studentId);
+      return { ...f, studentIds: Array.from(ids) };
+    });
+  };
+
   return (
     <div className="space-y-6">
       <div className="page-header flex-wrap gap-3">
@@ -106,6 +156,24 @@ export default function StaffPage() {
           }}
           placeholder="Search staff…"
         />
+      </div>
+
+      {/* Role tabs */}
+      <div className="flex gap-2">
+        {roleTabs.map((tab) => (
+          <button
+            key={tab.value}
+            className={`btn ${
+              activeRole === tab.value ? "btn-primary" : "btn-ghost"
+            }`}
+            onClick={() => {
+              setActiveRole(tab.value);
+              setPage(1);
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
       {isLoading ? (
@@ -165,19 +233,51 @@ export default function StaffPage() {
                       ? (t.teacherProfile?.qualification ?? "Teacher")
                       : (t.adminProfile?.department ?? t.role)}
                   </p>
-                  {t.role === "TEACHER" && t.teacherProfile?.specialization && (
-                    <p className="text-xs text-primary-600">
-                      {t.teacherProfile.specialization}
-                    </p>
+                  {t.role === "TEACHER" && (
+                    <>
+                      {t.teacherProfile?.specialization && (
+                        <p className="text-xs text-primary-600">
+                          {t.teacherProfile.specialization}
+                        </p>
+                      )}
+                      {t.teacherProfile?.gradeLevel?.name && (
+                        <p className="text-xs text-primary-600">
+                          Teaches {t.teacherProfile.gradeLevel.name}
+                        </p>
+                      )}
+                      {t.teacherProfile?.assignedClasses?.length > 0 && (
+                        <p className="text-xs text-primary-600">
+                          Assigned to{" "}
+                          {t.teacherProfile.assignedClasses
+                            .map((c) => c.name)
+                            .join(", ")}
+                        </p>
+                      )}
+                    </>
                   )}
+                  {t.role === "PARENT" &&
+                    t.parentProfile?.studentLinks?.length > 0 && (
+                      <p className="text-xs text-primary-600">
+                        Child:{" "}
+                        {t.parentProfile.studentLinks
+                          .map(
+                            (link) =>
+                              `${link.studentProfile.user.firstName} ${link.studentProfile.user.lastName}`,
+                          )
+                          .join(", ")}
+                      </p>
+                    )}
                 </div>
               </div>
               <div className="space-y-1 text-xs text-gray-400">
                 <p>📧 {t.email}</p>
                 {t.phone && <p>📞 {t.phone}</p>}
-                {t.teacherProfile?.classTeacherOf && (
+                {t.teacherProfile?.assignedClasses?.length > 0 && (
                   <p className="text-primary-600 font-medium">
-                    Class Teacher: {t.teacherProfile.classTeacherOf.name}
+                    Class Teacher of:{" "}
+                    {t.teacherProfile.assignedClasses
+                      .map((c) => c.name)
+                      .join(", ")}
                   </p>
                 )}
               </div>
@@ -260,6 +360,7 @@ export default function StaffPage() {
             <select className="input" value={form.role} onChange={set("role")}>
               <option value="TEACHER">Teacher</option>
               <option value="FINANCE">Finance</option>
+              <option value="PARENT">Parent</option>
               <option value="ADMIN">Admin</option>
               <option value="SUPER_ADMIN">Super Admin</option>
             </select>
@@ -291,6 +392,49 @@ export default function StaffPage() {
               placeholder="e.g., Mathematics, Biology"
             />
           </div>
+          {form.role === "TEACHER" && (
+            <div>
+              <label className="label">
+                Assign Classes (select one or more)
+              </label>
+              <div className="grid grid-cols-2 gap-2 max-h-48 overflow-auto border rounded p-2">
+                {classes.map((klass) => (
+                  <label key={klass.id} className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={(form.classIds || []).includes(klass.id)}
+                      onChange={() => toggleClass(klass.id)}
+                    />
+                    <span className="text-sm">{klass.name}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+          {form.role === "PARENT" && (
+            <div>
+              <label className="label">
+                Child Students (select one or more)
+              </label>
+              <div className="grid grid-cols-1 gap-2 max-h-56 overflow-auto border rounded p-2">
+                {(studentOptionsData || []).map((student) => (
+                  <label key={student.id} className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={(form.studentIds || []).includes(student.id)}
+                      onChange={() => toggleStudent(student.id)}
+                    />
+                    <span className="text-sm">
+                      {student.firstName} {student.lastName}
+                      {student.studentProfile?.class?.name
+                        ? ` — ${student.studentProfile.class.name}`
+                        : ""}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
           <div>
             <label className="label">Temporary Password</label>
             <input

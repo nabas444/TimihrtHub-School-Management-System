@@ -136,7 +136,7 @@ async function main() {
           employeeId: "TCH001",
           qualification: "MSc Mathematics",
           isClassTeacher: true,
-          classTeacherOfId: classA.id,
+          assignedClasses: { connect: { id: classA.id } },
         },
       },
     },

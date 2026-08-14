@@ -28,6 +28,10 @@ const StudentsPage = lazy(() => import("../features/students/StudentsPage"));
 const StudentDetailPage = lazy(
   () => import("../features/students/StudentDetailPage"),
 );
+const HelpCenterPage = lazy(() => import("../pages/HelpCenterPage"));
+const ApiDocsPage = lazy(() => import("../pages/ApiDocsPage"));
+const ReleaseNotesPage = lazy(() => import("../pages/ReleaseNotesPage"));
+const CommunityPage = lazy(() => import("../pages/CommunityPage"));
 const AssignmentsPage = lazy(
   () => import("../features/academics/AssignmentsPage"),
 );
@@ -81,6 +85,38 @@ export const router = createBrowserRouter([
     element: (
       <S>
         <RootLanding />
+      </S>
+    ),
+  },
+  {
+    path: "/help",
+    element: (
+      <S>
+        <HelpCenterPage />
+      </S>
+    ),
+  },
+  {
+    path: "/docs/api",
+    element: (
+      <S>
+        <ApiDocsPage />
+      </S>
+    ),
+  },
+  {
+    path: "/release-notes",
+    element: (
+      <S>
+        <ReleaseNotesPage />
+      </S>
+    ),
+  },
+  {
+    path: "/community",
+    element: (
+      <S>
+        <CommunityPage />
       </S>
     ),
   },

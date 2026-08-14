@@ -21,17 +21,24 @@ router.get(
       const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
       const skip = (page - 1) * limit;
       const search = req.query.search as string | undefined;
+      const roleFilter = (req.query.role as string | undefined) || "ALL";
 
       const staffRoles = [
         Role.TEACHER,
         Role.FINANCE,
         Role.ADMIN,
         Role.SUPER_ADMIN,
+        Role.PARENT,
       ];
+
+      const normalizedRole =
+        roleFilter && roleFilter !== "ALL" ? (roleFilter as Role) : undefined;
 
       const where = {
         schoolId: req.user.schoolId,
-        role: { in: staffRoles },
+        ...(normalizedRole
+          ? { role: normalizedRole }
+          : { role: { in: staffRoles } }),
         ...(search && {
           OR: [
             { firstName: { contains: search, mode: "insensitive" as const } },
@@ -57,7 +64,8 @@ router.get(
             isActive: true,
             teacherProfile: {
               include: {
-                classTeacherOf: { select: { name: true } },
+                assignedClasses: { select: { id: true, name: true } },
+                gradeLevel: { select: { id: true, name: true } },
                 subjectTeachings: {
                   include: {
                     subject: { select: { name: true } },
@@ -68,6 +76,24 @@ router.get(
             },
             adminProfile: {
               select: { department: true, isSuperAdmin: true },
+            },
+            parentProfile: {
+              include: {
+                studentLinks: {
+                  include: {
+                    studentProfile: {
+                      include: {
+                        user: {
+                          select: {
+                            firstName: true,
+                            lastName: true,
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
             },
           },
           orderBy: { firstName: "asc" },

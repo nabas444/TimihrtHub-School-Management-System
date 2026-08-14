@@ -406,9 +406,14 @@ model TeacherProfile {
   joinedAt         DateTime @default(now())
   isClassTeacher   Boolean  @default(false)
   classTeacherOfId String?
+  gradeLevelId     String?
 
   user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Single class this teacher is class-teacher of
   classTeacherOf   Class?            @relation("ClassTeacher", fields: [classTeacherOfId], references: [id])
+  // Classes this teacher has been assigned to (many-to-many)
+  assignedClasses  Class[]           @relation("AssignedClasses")
+  gradeLevel       GradeLevel?       @relation(fields: [gradeLevelId], references: [id])
   subjectTeachings SubjectTeaching[]
   leaveRequests    LeaveRequest[]
   payrollRecords   PayrollRecord[]
@@ -489,6 +494,8 @@ model Class {
   gradeLevel        GradeLevel         @relation(fields: [gradeLevelId], references: [id])
   students          StudentProfile[]
   classTeacher      TeacherProfile[]   @relation("ClassTeacher")
+  // Teachers assigned to this class (many-to-many)
+  assignedTeachers  TeacherProfile[]   @relation("AssignedClasses")
   teachings         SubjectTeaching[]
   timetableSlots    TimetableSlot[]
   attendanceRecords AttendanceRecord[]
@@ -525,6 +532,8 @@ model Subject {
   name        String
   code        String
   description String?
+  gradeLevelId String?
+  gradeLevel  GradeLevel? @relation(fields: [gradeLevelId], references: [id])
   creditHours Int      @default(3)
   isCore      Boolean  @default(true)
   createdAt   DateTime @default(now())

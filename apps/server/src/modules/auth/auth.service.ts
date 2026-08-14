@@ -1,7 +1,7 @@
-import bcrypt from 'bcryptjs';
-import { Role } from '@prisma/client';
-import { db } from '../../config/database';
-import { cacheDel } from '../../config/redis';
+import bcrypt from "bcryptjs";
+import { Role } from "@prisma/client";
+import { db } from "../../config/database";
+import { cacheDel } from "../../config/redis";
 import {
   signAccessToken,
   signRefreshToken,
@@ -9,12 +9,16 @@ import {
   generateOpaqueToken,
   getRefreshTokenExpiry,
   getPasswordResetExpiry,
-} from '../../utils/jwt';
-import { AppError } from '../../middleware/errorHandler';
-import { logger } from '../../utils/logger';
-import { sendWelcomeEmail, sendPasswordResetEmail } from '../../jobs/emailWorker';
+} from "../../utils/jwt";
+import { AppError } from "../../middleware/errorHandler";
+import { logger } from "../../utils/logger";
+import {
+  sendWelcomeEmail,
+  sendPasswordResetEmail,
+} from "../../jobs/emailWorker";
+import * as UsersService from "../users/users.service";
 
-const SALT_ROUNDS = parseInt(process.env.BCRYPT_SALT_ROUNDS ?? '12');
+const SALT_ROUNDS = parseInt(process.env.BCRYPT_SALT_ROUNDS ?? "12");
 
 // ── Register a new school + first admin ─────────────────────────────────────
 export const registerSchool = async (data: {
@@ -30,12 +34,12 @@ export const registerSchool = async (data: {
   const existingAdmin = await db.user.findFirst({
     where: { email: data.adminEmail },
   });
-  if (existingAdmin) throw new AppError('Email already in use', 409);
+  if (existingAdmin) throw new AppError("Email already in use", 409);
 
   const slug = data.schoolName
     .toLowerCase()
-    .replace(/[^a-z0-9]/g, '-')
-    .replace(/-+/g, '-')
+    .replace(/[^a-z0-9]/g, "-")
+    .replace(/-+/g, "-")
     .slice(0, 50);
 
   // Check slug uniqueness
@@ -53,12 +57,12 @@ export const registerSchool = async (data: {
         slug: finalSlug,
         email: data.schoolEmail,
         phone: data.schoolPhone,
-        country: data.country ?? 'Ethiopia',
+        country: data.country ?? "Ethiopia",
         settings: { create: {} },
         subscription: {
           create: {
-            plan: 'FREE',
-            status: 'TRIALING',
+            plan: "FREE",
+            status: "TRIALING",
             trialEndsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
           },
         },
@@ -83,7 +87,9 @@ export const registerSchool = async (data: {
     return { school, admin };
   });
 
-  logger.info(`New school registered: ${result.school.name} (${result.school.id})`);
+  logger.info(
+    `New school registered: ${result.school.name} (${result.school.id})`,
+  );
 
   await sendWelcomeEmail(
     result.admin.email,
@@ -95,22 +101,33 @@ export const registerSchool = async (data: {
 };
 
 // ── Login ────────────────────────────────────────────────────────────────────
-export const login = async (email: string, password: string, schoolSlug?: string) => {
+export const login = async (
+  email: string,
+  password: string,
+  schoolSlug?: string,
+) => {
   const whereClause = schoolSlug
     ? { email, school: { slug: schoolSlug } }
     : { email };
 
   const user = await db.user.findFirst({
     where: whereClause,
-    include: { school: { select: { id: true, name: true, slug: true, isActive: true } } },
+    include: {
+      school: { select: { id: true, name: true, slug: true, isActive: true } },
+    },
   });
 
-  if (!user) throw new AppError('Invalid email or password', 401);
-  if (!user.isActive) throw new AppError('Account is disabled. Contact school administration.', 403);
-  if (!user.school.isActive) throw new AppError('School account is inactive.', 403);
+  if (!user) throw new AppError("Invalid email or password", 401);
+  if (!user.isActive)
+    throw new AppError(
+      "Account is disabled. Contact school administration.",
+      403,
+    );
+  if (!user.school.isActive)
+    throw new AppError("School account is inactive.", 403);
 
   const valid = await bcrypt.compare(password, user.password);
-  if (!valid) throw new AppError('Invalid email or password', 401);
+  if (!valid) throw new AppError("Invalid email or password", 401);
 
   // Generate tokens
   const payload = {
@@ -141,16 +158,8 @@ export const login = async (email: string, password: string, schoolSlug?: string
   return {
     accessToken,
     refreshToken,
-    user: {
-      id: user.id,
-      schoolId: user.schoolId,
-      role: user.role,
-      email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      avatar: user.avatar,
-      school: user.school,
-    },
+    // Return full user profile so front-end has teacher/student relations
+    user: await UsersService.getUserById(user.id, user.schoolId),
   };
 };
 
@@ -160,12 +169,12 @@ export const refreshTokens = async (token: string) => {
   try {
     payload = verifyRefreshToken(token);
   } catch {
-    throw new AppError('Invalid refresh token', 401);
+    throw new AppError("Invalid refresh token", 401);
   }
 
   const stored = await db.refreshToken.findUnique({ where: { token } });
   if (!stored || stored.expiresAt < new Date()) {
-    throw new AppError('Refresh token expired or not found', 401);
+    throw new AppError("Refresh token expired or not found", 401);
   }
 
   // Rotate — delete old, issue new
@@ -212,7 +221,11 @@ export const requestPasswordReset = async (email: string) => {
   });
 
   const resetLink = `${process.env.CLIENT_URL}/reset-password?token=${token}`;
-  await sendPasswordResetEmail(email, `${user.firstName} ${user.lastName}`, resetLink);
+  await sendPasswordResetEmail(
+    email,
+    `${user.firstName} ${user.lastName}`,
+    resetLink,
+  );
   logger.info(`Password reset email queued for ${email}`);
 
   // Token is still returned so callers/tests can exercise the flow without
@@ -224,13 +237,16 @@ export const requestPasswordReset = async (email: string) => {
 export const resetPassword = async (token: string, newPassword: string) => {
   const reset = await db.passwordReset.findUnique({ where: { token } });
   if (!reset || reset.expiresAt < new Date() || reset.usedAt) {
-    throw new AppError('Reset link is invalid or expired', 400);
+    throw new AppError("Reset link is invalid or expired", 400);
   }
 
   const hashed = await bcrypt.hash(newPassword, SALT_ROUNDS);
   await db.$transaction([
     db.user.update({ where: { id: reset.userId }, data: { password: hashed } }),
-    db.passwordReset.update({ where: { id: reset.id }, data: { usedAt: new Date() } }),
+    db.passwordReset.update({
+      where: { id: reset.id },
+      data: { usedAt: new Date() },
+    }),
     db.refreshToken.deleteMany({ where: { userId: reset.userId } }), // invalidate all sessions
   ]);
 
@@ -244,10 +260,10 @@ export const changePassword = async (
   newPassword: string,
 ) => {
   const user = await db.user.findUnique({ where: { id: userId } });
-  if (!user) throw new AppError('User not found', 404);
+  if (!user) throw new AppError("User not found", 404);
 
   const valid = await bcrypt.compare(currentPassword, user.password);
-  if (!valid) throw new AppError('Current password is incorrect', 400);
+  if (!valid) throw new AppError("Current password is incorrect", 400);
 
   const hashed = await bcrypt.hash(newPassword, SALT_ROUNDS);
   await db.user.update({ where: { id: userId }, data: { password: hashed } });

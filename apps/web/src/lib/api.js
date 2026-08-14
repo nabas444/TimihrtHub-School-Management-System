@@ -1,15 +1,28 @@
-import axios from 'axios';
+import axios from "axios";
 
 const api = axios.create({
-  baseURL: '/api/v1',
+  baseURL: "/api/v1",
   withCredentials: true,
-  headers: { 'Content-Type': 'application/json' },
+  headers: { "Content-Type": "application/json" },
 });
 
 // ── Request interceptor — attach access token ────────────────────────────────
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('accessToken');
+  const token = localStorage.getItem("accessToken");
   if (token) config.headers.Authorization = `Bearer ${token}`;
+
+  if (config.data instanceof FormData) {
+    const cleanHeaders = (headers) => {
+      if (!headers) return;
+      delete headers["Content-Type"];
+      delete headers["content-type"];
+    };
+
+    cleanHeaders(config.headers);
+    cleanHeaders(config.headers?.common);
+    cleanHeaders(config.headers?.post);
+  }
+
   return config;
 });
 
@@ -44,16 +57,16 @@ api.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        const res = await api.post('/auth/refresh');
+        const res = await api.post("/auth/refresh");
         const { accessToken } = res.data.data;
-        localStorage.setItem('accessToken', accessToken);
+        localStorage.setItem("accessToken", accessToken);
         processQueue(null, accessToken);
         originalRequest.headers.Authorization = `Bearer ${accessToken}`;
         return api(originalRequest);
       } catch (refreshError) {
         processQueue(refreshError, null);
-        localStorage.removeItem('accessToken');
-        window.location.href = '/login';
+        localStorage.removeItem("accessToken");
+        window.location.href = "/login";
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;

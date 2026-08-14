@@ -18,6 +18,7 @@ import {
   ArrowRight,
   ShieldCheck,
 } from "lucide-react";
+import { useAuthStore } from "../store/authStore";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Content — grounded in the actual product surface (see /services, /pricing)
@@ -201,13 +202,78 @@ const FOOTER_LINKS = {
   Resources: ["Help center", "API docs", "Release notes", "Community"],
 };
 
+const RESOURCE_LINKS = {
+  "Help center": "/help",
+  "API docs": "/docs/api",
+  "Release notes": "/release-notes",
+  Community: "/community",
+};
+
 // ─────────────────────────────────────────────────────────────────────────
 
 export default function LandingPage() {
+  const {
+    isAuthenticated,
+    user,
+    isAdmin,
+    isTeacher,
+    isStudent,
+    isParent,
+    isFinance,
+  } = useAuthStore();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [servicesOpen, setServicesOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState(0);
   const servicesRef = useRef(null);
+
+  const getDashboardPath = () => {
+    if (isAdmin()) return "/dashboard";
+    if (isTeacher()) return "/dashboard";
+    if (isFinance()) return "/dashboard";
+    if (isStudent()) return "/dashboard";
+    if (isParent()) return "/dashboard";
+    return "/dashboard";
+  };
+
+  const getServiceRoute = (service) => {
+    if (!isAuthenticated) return "/";
+    if (service.title.includes("Attendance")) return "/attendance";
+    if (service.title.includes("Grading")) return "/grades";
+    if (service.title.includes("Fees")) return "/fees";
+    if (service.title.includes("Family")) return "/chat";
+    if (service.title.includes("Library")) return "/library";
+    if (service.title.includes("AI")) return "/ai";
+    return getDashboardPath();
+  };
+
+  const getPrimaryAction = () => {
+    if (isAuthenticated) {
+      return {
+        to: getDashboardPath(),
+        label: "Go to dashboard",
+      };
+    }
+    return {
+      to: "/register",
+      label: "Start free trial",
+    };
+  };
+
+  const getSecondaryAction = () => {
+    if (isAuthenticated) {
+      return {
+        to: "/billing",
+        label: "Upgrade",
+      };
+    }
+    return {
+      to: "#pricing",
+      label: "See pricing",
+    };
+  };
+
+  const primaryAction = getPrimaryAction();
+  const secondaryAction = getSecondaryAction();
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -261,9 +327,13 @@ export default function LandingPage() {
                 <div className="absolute left-1/2 top-full mt-2 w-[560px] -translate-x-1/2 animate-fade-in rounded-2xl border border-gray-100 bg-white p-4 shadow-card-hover">
                   <div className="grid grid-cols-2 gap-1">
                     {SERVICES.map((service) => (
-                      <a
+                      <Link
                         key={service.title}
-                        href="#services"
+                        to={
+                          isAuthenticated
+                            ? getServiceRoute(service)
+                            : "#services"
+                        }
                         onClick={() => setServicesOpen(false)}
                         className="flex items-start gap-3 rounded-xl p-3 transition-colors hover:bg-primary-50"
                       >
@@ -278,7 +348,7 @@ export default function LandingPage() {
                             {service.description}
                           </span>
                         </span>
-                      </a>
+                      </Link>
                     ))}
                   </div>
                   <div className="mt-2 border-t border-gray-100 pt-3 text-right">
@@ -310,12 +380,25 @@ export default function LandingPage() {
           </nav>
 
           <div className="hidden items-center gap-2 lg:flex">
-            <Link to="/login" className="btn btn-ghost">
-              Sign in
-            </Link>
-            <Link to="/register" className="btn-primary">
-              Start free trial
-            </Link>
+            {isAuthenticated ? (
+              <>
+                <Link to={primaryAction.to} className="btn-primary">
+                  {primaryAction.label}
+                </Link>
+                <Link to={secondaryAction.to} className="btn btn-ghost">
+                  {secondaryAction.label}
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link to="/login" className="btn btn-ghost">
+                  Sign in
+                </Link>
+                <Link to="/register" className="btn-primary">
+                  Start free trial
+                </Link>
+              </>
+            )}
           </div>
 
           {/* Mobile toggle */}
@@ -341,15 +424,15 @@ export default function LandingPage() {
             </p>
             <div className="grid grid-cols-1 gap-0.5">
               {SERVICES.map((service) => (
-                <a
+                <Link
                   key={service.title}
-                  href="#services"
+                  to={getServiceRoute(service)}
                   onClick={() => setMobileOpen(false)}
                   className="flex items-center gap-3 rounded-lg px-2 py-2 text-sm text-gray-700 hover:bg-gray-50"
                 >
                   <service.icon className="h-4 w-4 text-primary-600" />
                   {service.title}
-                </a>
+                </Link>
               ))}
             </div>
             <div className="mt-3 flex flex-col gap-2 border-t border-gray-100 pt-3">
@@ -359,12 +442,28 @@ export default function LandingPage() {
               >
                 Pricing
               </a>
-              <Link to="/login" className="btn btn-secondary w-full">
-                Sign in
-              </Link>
-              <Link to="/register" className="btn-primary w-full">
-                Start free trial
-              </Link>
+              {isAuthenticated ? (
+                <>
+                  <Link to={primaryAction.to} className="btn-primary w-full">
+                    {primaryAction.label}
+                  </Link>
+                  <Link
+                    to={secondaryAction.to}
+                    className="btn btn-secondary w-full"
+                  >
+                    {secondaryAction.label}
+                  </Link>
+                </>
+              ) : (
+                <>
+                  <Link to="/login" className="btn btn-secondary w-full">
+                    Sign in
+                  </Link>
+                  <Link to="/register" className="btn-primary w-full">
+                    Start free trial
+                  </Link>
+                </>
+              )}
             </div>
           </div>
         )}
@@ -397,13 +496,16 @@ export default function LandingPage() {
               offline, and speaks English, Amharic, and Afaan Oromo.
             </p>
             <div className="mt-8 flex flex-wrap items-center gap-3">
-              <Link to="/register" className="btn-primary btn-lg">
-                Start free trial
+              <Link to={primaryAction.to} className="btn-primary btn-lg">
+                {primaryAction.label}
                 <ArrowRight className="h-4 w-4" />
               </Link>
-              <a href="#pricing" className="btn btn-secondary btn-lg">
-                See pricing
-              </a>
+              <Link
+                to={secondaryAction.to}
+                className="btn btn-secondary btn-lg"
+              >
+                {secondaryAction.label}
+              </Link>
             </div>
             <p className="mt-4 text-xs text-gray-400">
               No credit card required · Free plan available forever
@@ -511,7 +613,11 @@ export default function LandingPage() {
 
         <div className="mt-14 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
           {SERVICES.map((service) => (
-            <div key={service.title} className="card-hover p-6">
+            <Link
+              key={service.title}
+              to={isAuthenticated ? getServiceRoute(service) : "/"}
+              className="card-hover p-6"
+            >
               <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
                 <service.icon className="h-5 w-5" />
               </span>
@@ -521,7 +627,7 @@ export default function LandingPage() {
               <p className="mt-2 text-sm leading-6 text-gray-500">
                 {service.description}
               </p>
-            </div>
+            </Link>
           ))}
         </div>
       </section>
@@ -713,18 +819,18 @@ export default function LandingPage() {
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <Link
-              to="/register"
+              to={primaryAction.to}
               className="btn btn-lg bg-white text-primary-900 hover:bg-primary-50"
             >
-              Start free trial
+              {primaryAction.label}
               <ArrowRight className="h-4 w-4" />
             </Link>
-            <a
-              href="#pricing"
+            <Link
+              to={secondaryAction.to}
               className="btn btn-lg border border-primary-700 text-white hover:bg-primary-900"
             >
-              Compare plans
-            </a>
+              {secondaryAction.label}
+            </Link>
           </div>
         </div>
       </section>
@@ -756,12 +862,21 @@ export default function LandingPage() {
                 <ul className="mt-4 space-y-3">
                   {links.map((link) => (
                     <li key={link}>
-                      <a
-                        href="#services"
-                        className="text-sm text-primary-200 transition-colors hover:text-white"
-                      >
-                        {link}
-                      </a>
+                      {RESOURCE_LINKS[link] ? (
+                        <Link
+                          to={RESOURCE_LINKS[link]}
+                          className="text-sm text-primary-200 transition-colors hover:text-white"
+                        >
+                          {link}
+                        </Link>
+                      ) : (
+                        <a
+                          href="#services"
+                          className="text-sm text-primary-200 transition-colors hover:text-white"
+                        >
+                          {link}
+                        </a>
+                      )}
                     </li>
                   ))}
                 </ul>

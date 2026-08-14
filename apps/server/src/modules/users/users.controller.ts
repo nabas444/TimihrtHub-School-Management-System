@@ -21,7 +21,9 @@ const CreateUserSchema = z.object({
   address: z.string().optional(),
   // Student
   admissionNumber: z.string().optional(),
+  rollNumber: z.string().optional(),
   classId: z.string().optional(),
+  classIds: z.array(z.string()).optional(),
   gradeLevelId: z.string().optional(),
   // Teacher
   employeeId: z.string().optional(),
@@ -30,6 +32,7 @@ const CreateUserSchema = z.object({
   // Parent
   occupation: z.string().optional(),
   relation: z.string().optional(),
+  studentIds: z.array(z.string()).optional(),
   // Admin
   department: z.string().optional(),
 });
@@ -41,9 +44,10 @@ const UpdateUserSchema = z.object({
   gender: z.nativeEnum(Gender).optional(),
   dateOfBirth: z.string().datetime().optional(),
   address: z.string().optional(),
-  avatar: z.string().url().optional(),
+  avatar: z.string().url().nullable().optional(),
   isActive: z.boolean().optional(),
   smsOptIn: z.boolean().optional(), // Phase 5 — parent SMS alert opt-in
+  rollNumber: z.string().optional(),
 });
 
 export const listUsers = async (
@@ -56,6 +60,9 @@ export const listUsers = async (
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
     const role = req.query.role as Role | undefined;
     const search = req.query.search as string | undefined;
+    const classIds = (req.query.classIds as string | undefined)
+      ? (req.query.classIds as string).split(",").filter(Boolean)
+      : undefined;
     const isActive =
       req.query.isActive !== undefined
         ? req.query.isActive === "true"
@@ -67,6 +74,7 @@ export const listUsers = async (
       page,
       limit,
       isActive,
+      classIds,
     });
     sendSuccess(
       res,
