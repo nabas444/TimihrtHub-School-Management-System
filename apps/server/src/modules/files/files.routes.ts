@@ -18,7 +18,7 @@ const CLOUDINARY_ENABLED = Boolean(CLOUDINARY_URL);
 
 fs.mkdir(UPLOAD_DIR, { recursive: true }).catch(() => null);
 
-if (CLOUDINARY_ENABLED) {
+if (CLOUDINARY_ENABLED && CLOUDINARY_URL) {
   try {
     const url = new URL(CLOUDINARY_URL);
     const api_key = url.username;
@@ -134,6 +134,7 @@ router.post(
       if (CLOUDINARY_ENABLED) {
         const uploadResponse = await cloudinary.uploader.upload(req.file.path, {
           folder: process.env.CLOUDINARY_FOLDER || "timhirthub",
+          resource_type: "auto",
         });
         fileUrl = uploadResponse.secure_url;
         await fs.unlink(req.file.path).catch(() => null);

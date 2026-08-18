@@ -33,7 +33,7 @@ import notificationRoutes from "./modules/notifications/notifications.routes";
 import libraryRoutes from "./modules/library/library.routes";
 import staffRoutes from "./modules/staff/staff.routes";
 import fileRoutes from "./modules/files/files.routes";
-import billingRoutes from "./modules/billing/billing.routes";
+import billingRoutes, { handleStripeWebhook } from "./modules/billing/billing.routes";
 
 // ── Background job workers ───────────────────────────────────────────────────
 // Importing these starts their BullMQ Worker instances (side effect on import).
@@ -70,8 +70,12 @@ app.use(
   }),
 );
 
-// Stripe webhook needs raw body — register BEFORE json middleware
-app.use("/api/v1/billing/webhook", express.raw({ type: "application/json" }));
+// Stripe webhook needs raw body and no JWT auth — register BEFORE json middleware and auth
+app.post(
+  "/api/v1/billing/webhook",
+  express.raw({ type: "application/json" }),
+  handleStripeWebhook,
+);
 
 app.use(compression());
 app.use(express.json({ limit: "10mb" }));
