@@ -22,7 +22,8 @@ export const useSocket = () => {
     socket.on('chat:message', (message) => {
       addMessage(message.roomId, message);
       const { activeRoomId } = useChatStore.getState();
-      if (message.roomId !== activeRoomId) {
+      const { user } = useAuthStore.getState();
+      if (message.roomId !== activeRoomId && message.senderId !== user?.id) {
         setUnread(message.roomId, (useChatStore.getState().unreadCounts[message.roomId] ?? 0) + 1);
       }
     });

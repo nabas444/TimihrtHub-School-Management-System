@@ -14,6 +14,11 @@ router.post(
   authorize(...isAdmin),
   AcademicsController.createSubject,
 );
+router.patch(
+  "/subjects/:id",
+  authorize(...isAdmin),
+  AcademicsController.updateSubject,
+);
 router.delete(
   "/subjects/:id",
   authorize(...isAdmin),
@@ -72,6 +77,16 @@ router.patch(
 router.get("/exams", AcademicsController.listExams);
 router.post("/exams", authorize(...isStaff), AcademicsController.createExam);
 router.patch(
+  "/exams/:id",
+  authorize(...isStaff),
+  AcademicsController.updateExam,
+);
+router.delete(
+  "/exams/:id",
+  authorize(...isAdmin),
+  AcademicsController.deleteExam,
+);
+router.patch(
   "/exams/:id/publish",
   authorize(...isAdmin),
   AcademicsController.publishExam,
@@ -83,12 +98,19 @@ router.post(
 );
 
 // Results
-router.get("/results", AcademicsController.getStudentResults); // own results
+router.get("/results", AcademicsController.getStudentResults); // own results (student) or first child (parent)
 router.get(
   "/results/:studentId",
-  authorize(...isStaff),
+  authorize(...isStaff, Role.PARENT),
   AcademicsController.getStudentResults,
-); // any student (staff)
+); // any student (staff) or linked child (parent)
+
+// Parent's linked children
+router.get(
+  "/parent/children",
+  authorize(Role.PARENT),
+  AcademicsController.getParentChildren,
+);
 
 // Grade reports
 router.post(
@@ -113,16 +135,51 @@ router.get(
 );
 
 // Printable documents
-router.get("/reports/pdf", AcademicsController.downloadReportCard); // own report card (student/parent viewing own child would need studentId, see below)
+router.get("/reports/pdf", AcademicsController.downloadReportCard); // own report card (student/parent viewing own child)
 router.get(
   "/reports/:studentId/pdf",
-  authorize(...isStaff),
+  authorize(...isStaff, Role.PARENT),
   AcademicsController.downloadReportCard,
-); // any student (staff)
+); // student report card (staff or parent)
 router.get(
   "/exams/:id/marksheet",
   authorize(...isStaff),
   AcademicsController.downloadMarkSheet,
 );
 
+// Teacher Class Roster & Results Recording
+router.get(
+  "/teacher-assignments",
+  authorize(...isStaff),
+  AcademicsController.getTeacherAssignments,
+);
+router.get(
+  "/roster",
+  authorize(...isStaff),
+  AcademicsController.getClassGradeRoster,
+);
+router.post(
+  "/roster",
+  authorize(...isStaff),
+  AcademicsController.saveClassGradeRoster,
+);
+router.post(
+  "/roster/submit",
+  authorize(...isStaff),
+  AcademicsController.submitClassRosterToAdmin,
+);
+
+// Comprehensive Master Cumulative Roster & Report Card Distribution
+router.get(
+  "/master-roster",
+  authorize(...isStaff),
+  AcademicsController.getMasterClassRoster,
+);
+router.post(
+  "/master-roster/distribute",
+  authorize(...isAdmin),
+  AcademicsController.distributeClassGradeReports,
+);
+
 export default router;
+

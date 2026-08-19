@@ -473,6 +473,7 @@ model GradeLevel {
 
   school   School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   classes  Class[]
+  subjects Subject[]
   students StudentProfile[]
   exams    Exam[]
   teachers TeacherProfile[] @relation("TeacherGradeLevel")
@@ -528,16 +529,18 @@ model AcademicTerm {
 }
 
 model Subject {
-  id          String   @id @default(uuid())
-  schoolId    String
-  name        String
-  code        String
-  description String?
-  creditHours Int      @default(3)
-  isCore      Boolean  @default(true)
-  createdAt   DateTime @default(now())
+  id           String   @id @default(uuid())
+  schoolId     String
+  gradeLevelId String?
+  name         String
+  code         String
+  description  String?
+  creditHours  Int      @default(3)
+  isCore       Boolean  @default(true)
+  createdAt    DateTime @default(now())
 
   school      School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  gradeLevel  GradeLevel?       @relation(fields: [gradeLevelId], references: [id], onDelete: SetNull)
   teachings   SubjectTeaching[]
   assignments Assignment[]
   exams       Exam[]

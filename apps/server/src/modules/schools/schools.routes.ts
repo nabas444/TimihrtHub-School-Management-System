@@ -111,7 +111,9 @@ router.get(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const schoolId = req.user.schoolId;
-      const cacheKey = `dashboard:${schoolId}`;
+      const userRole = req.user.role;
+      const userId = req.user.id;
+      const cacheKey = `dashboard:${schoolId}:${userRole}:${userId}`;
       const cached = await cacheGet<object>(cacheKey);
       if (cached) {
         sendSuccess(res, cached);
@@ -122,6 +124,252 @@ router.get(
       today.setHours(0, 0, 0, 0);
       const thisMonth = new Date(today.getFullYear(), today.getMonth(), 1);
 
+      // ── A. TEACHER DASHBOARD METRICS ─────────────────────────────────────────
+      if (userRole === Role.TEACHER) {
+        const teacherProfile = await db.teacherProfile.findUnique({
+          where: { userId },
+          include: {
+            subjectTeachings: {
+              include: {
+                class: { select: { id: true, name: true } },
+                subject: { select: { id: true, name: true } },
+              },
+            },
+            assignedClasses: { select: { id: true, name: true } },
+            classTeacherOf: { select: { id: true, name: true } },
+          },
+        });
+
+        const assignedClassIds = new Set<string>();
+        const assignedSubjectNames = new Set<string>();
+
+        (teacherProfile?.subjectTeachings ?? []).forEach((t) => {
+          if (t.classId) assignedClassIds.add(t.classId);
+          if (t.subject?.name) assignedSubjectNames.add(t.subject.name);
+        });
+        (teacherProfile?.assignedClasses ?? []).forEach((c) => {
+          assignedClassIds.add(c.id);
+        });
+        if (teacherProfile?.classTeacherOfId) {
+          assignedClassIds.add(teacherProfile.classTeacherOfId);
+        }
+
+        // Include timetable slots if any
+        if (teacherProfile?.id) {
+          const slots = await db.timetableSlot.findMany({
+            where: { subjectTeaching: { teacherProfileId: teacherProfile.id } },
+            select: { classId: true },
+          });
+          slots.forEach((s) => {
+            if (s.classId) assignedClassIds.add(s.classId);
+          });
+        }
+
+        const classIdList = Array.from(assignedClassIds);
+
+        const [totalSchoolStudents, totalSchoolClasses, totalSchoolSubjects] =
+          await Promise.all([
+            db.user.count({
+              where: { schoolId, role: Role.STUDENT, isActive: true },
+            }),
+            db.class.count({ where: { schoolId } }),
+            db.subject.count({ where: { schoolId } }),
+          ]);
+
+        let totalMyStudents = 0;
+        let myStudentUserIds: string[] = [];
+
+        if (classIdList.length > 0) {
+          const studentsInClasses = await db.studentProfile.findMany({
+            where: {
+              classId: { in: classIdList },
+              user: { schoolId, isActive: true },
+            },
+            select: { id: true, userId: true },
+          });
+          if (studentsInClasses.length > 0) {
+            totalMyStudents = studentsInClasses.length;
+            myStudentUserIds = studentsInClasses.map((s) => s.userId);
+          } else {
+            totalMyStudents = totalSchoolStudents;
+            const allSchoolStudents = await db.user.findMany({
+              where: { schoolId, role: Role.STUDENT, isActive: true },
+              select: { id: true },
+            });
+            myStudentUserIds = allSchoolStudents.map((s) => s.id);
+          }
+        } else {
+          totalMyStudents = totalSchoolStudents;
+          const allSchoolStudents = await db.user.findMany({
+            where: { schoolId, role: Role.STUDENT, isActive: true },
+            select: { id: true },
+          });
+          myStudentUserIds = allSchoolStudents.map((s) => s.id);
+        }
+
+        const classesCount =
+          classIdList.length > 0 ? classIdList.length : totalSchoolClasses;
+        const subjectsCount =
+          assignedSubjectNames.size > 0
+            ? assignedSubjectNames.size
+            : totalSchoolSubjects;
+
+        const [
+          todayPresent,
+          todayAbsent,
+          monthlyAttendance,
+          myAssignmentsCount,
+          pendingGradingCount,
+          recentBehaviour,
+          upcomingExams,
+          recentAnnouncements,
+        ] = await Promise.all([
+          myStudentUserIds.length > 0
+            ? db.attendanceRecord.count({
+                where: {
+                  schoolId,
+                  studentId: { in: myStudentUserIds },
+                  date: today,
+                  status: "PRESENT",
+                },
+              })
+            : 0,
+          myStudentUserIds.length > 0
+            ? db.attendanceRecord.count({
+                where: {
+                  schoolId,
+                  studentId: { in: myStudentUserIds },
+                  date: today,
+                  status: "ABSENT",
+                },
+              })
+            : 0,
+          myStudentUserIds.length > 0
+            ? db.attendanceRecord.findMany({
+                where: {
+                  schoolId,
+                  studentId: { in: myStudentUserIds },
+                  date: { gte: thisMonth },
+                },
+                select: { status: true },
+                take: 5000,
+              })
+            : [],
+          db.assignment.count({
+            where: {
+              schoolId,
+              createdById: userId,
+              isPublished: true,
+              dueDate: { gte: new Date() },
+            },
+          }),
+          db.submission.count({
+            where: {
+              assignment: { schoolId, createdById: userId },
+              status: "SUBMITTED",
+            },
+          }),
+          myStudentUserIds.length > 0
+            ? db.behaviourRecord.findMany({
+                where: {
+                  schoolId,
+                  studentId: { in: myStudentUserIds },
+                  createdAt: { gte: thisMonth },
+                },
+                select: { type: true },
+                take: 100,
+              })
+            : [],
+          classIdList.length > 0
+            ? db.exam.findMany({
+                where: {
+                  schoolId,
+                  classId: { in: classIdList },
+                  scheduledAt: { gte: new Date() },
+                  isPublished: true,
+                },
+                include: {
+                  subject: { select: { name: true } },
+                  class: { select: { name: true } },
+                },
+                take: 5,
+                orderBy: { scheduledAt: "asc" },
+              })
+            : db.exam.findMany({
+                where: {
+                  schoolId,
+                  scheduledAt: { gte: new Date() },
+                  isPublished: true,
+                },
+                include: {
+                  subject: { select: { name: true } },
+                  class: { select: { name: true } },
+                },
+                take: 5,
+                orderBy: { scheduledAt: "asc" },
+              }),
+          db.announcement.findMany({
+            where: { schoolId, publishedAt: { lte: new Date() } },
+            orderBy: { publishedAt: "desc" },
+            take: 3,
+          }),
+        ]);
+
+        const attendanceRate =
+          monthlyAttendance.length > 0
+            ? Math.round(
+                (monthlyAttendance.filter((r) => r.status === "PRESENT").length /
+                  monthlyAttendance.length) *
+                  100,
+              )
+            : 0;
+
+        const meritCount = recentBehaviour.filter(
+          (r) => r.type === "MERIT" || r.type === "COMMENDATION",
+        ).length;
+        const demeritCount = recentBehaviour.filter(
+          (r) => r.type === "DEMERIT" || r.type === "INCIDENT",
+        ).length;
+
+        const teacherDashboard = {
+          isTeacher: true,
+          users: {
+            students: totalMyStudents,
+            teachers: 1,
+            parents: 0,
+          },
+          teacher: {
+            totalStudents: totalMyStudents,
+            classesCount: classIdList.length,
+            subjectsCount: assignedSubjectNames.size,
+            pendingGrading: pendingGradingCount,
+            activeAssignments: myAssignmentsCount,
+          },
+          todayAttendance: {
+            present: todayPresent,
+            absent: todayAbsent,
+            total: todayPresent + todayAbsent,
+            rate:
+              todayPresent + todayAbsent > 0
+                ? Math.round((todayPresent / (todayPresent + todayAbsent)) * 100)
+                : 0,
+          },
+          monthlyAttendanceRate: attendanceRate,
+          pendingAssignments: myAssignmentsCount,
+          overdueInvoices: 0,
+          feeCollection: { totalBilled: 0, totalCollected: 0, totalPending: 0, collectionRate: 0 },
+          behaviour: { merits: meritCount, demerits: demeritCount },
+          upcomingExams,
+          recentAnnouncements,
+          academicPerformance: null,
+        };
+
+        await cacheSet(cacheKey, teacherDashboard, 300);
+        sendSuccess(res, teacherDashboard);
+        return;
+      }
+
+      // ── B. ADMIN / FINANCE DASHBOARD METRICS ─────────────────────────────────
       const [
         totalStudents,
         totalTeachers,
@@ -203,8 +451,6 @@ router.get(
         (r) => r.type === "DEMERIT" || r.type === "INCIDENT",
       ).length;
 
-      // Fee collection breakdown vs. pending dues (requirement doc: "Term-by-term
-      // fee collection breakdown vs. pending dues").
       const totalBilled = feeInvoiceTotals._sum.amount ?? 0;
       const totalCollected = feeInvoiceTotals._sum.paidAmount ?? 0;
       const feeCollection = {
@@ -217,10 +463,6 @@ router.get(
             : 0,
       };
 
-      // doc: "Pass/fail rate statistics" and "Best-performing and at-risk students
-      // identification"). Only computable once the current term has published
-      // grade reports, so this degrades gracefully rather than failing the whole
-      // dashboard if there's nothing to summarize yet.
       let academicPerformance: object | null = null;
       if (currentTerm) {
         try {
@@ -235,11 +477,12 @@ router.get(
             ...insights,
           };
         } catch {
-          academicPerformance = null; // no grade reports generated for the current term yet
+          academicPerformance = null;
         }
       }
 
       const dashboard = {
+        isTeacher: false,
         users: {
           students: totalStudents,
           teachers: totalTeachers,
@@ -279,12 +522,28 @@ router.get(
     try {
       const schoolId = req.user.schoolId;
 
-      // Fetch existing grade levels for this school only (do not auto-create)
-      const levels = await db.gradeLevel.findMany({
+      let levels = await db.gradeLevel.findMany({
         where: { schoolId },
         include: { _count: { select: { students: true, classes: true } } },
         orderBy: { level: "asc" },
       });
+
+      // Auto-initialize standard Grade 1 to Grade 12 if none exist for this school
+      if (levels.length === 0) {
+        await Promise.all(
+          Array.from({ length: 12 }, (_, i) => i + 1).map((lvl) =>
+            db.gradeLevel.create({
+              data: { schoolId, name: `Grade ${lvl}`, level: lvl },
+            }),
+          ),
+        );
+        levels = await db.gradeLevel.findMany({
+          where: { schoolId },
+          include: { _count: { select: { students: true, classes: true } } },
+          orderBy: { level: "asc" },
+        });
+      }
+
       sendSuccess(res, levels);
     } catch (e) {
       next(e);

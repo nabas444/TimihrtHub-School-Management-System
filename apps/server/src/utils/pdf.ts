@@ -487,6 +487,12 @@ export interface IdCardData {
     role: string;
     idNumber: string;
     className?: string | null;
+    gradeLevelName?: string | null;
+    gender?: string | null;
+    dateOfBirth?: string | null;
+    phone?: string | null;
+    email?: string | null;
+    rollNumber?: string | null;
     validThrough?: string | null;
   };
 }
@@ -495,97 +501,341 @@ export async function generateIdCardPdf(data: IdCardData): Promise<Buffer> {
   const { doc, font, bold } = await newDoc();
   const width = 242.6,
     height = 153.4;
-  const page = doc.addPage([width, height]);
 
-  page.drawRectangle({ x: 0, y: 0, width, height, color: COLOR.white });
-  page.drawRectangle({
+  // ══════════════════════════════════════════════════════════════
+  // PAGE 1: FRONT SIDE
+  // ══════════════════════════════════════════════════════════════
+  const frontPage = doc.addPage([width, height]);
+
+  // Card Background & Outer Border
+  frontPage.drawRectangle({
     x: 0,
-    y: height - 34,
+    y: 0,
     width,
-    height: 34,
-    color: COLOR.navy,
+    height,
+    color: rgb(0.98, 0.98, 0.99),
   });
-  page.drawText(data.school.name, {
+  frontPage.drawRectangle({
+    x: 1,
+    y: 1,
+    width: width - 2,
+    height: height - 2,
+    borderColor: rgb(0.8, 0.84, 0.9),
+    borderWidth: 1,
+  });
+
+  // Top Header Banner (Deep Navy + Gold Accent)
+  frontPage.drawRectangle({
+    x: 0,
+    y: height - 38,
+    width,
+    height: 38,
+    color: rgb(0.08, 0.16, 0.32),
+  });
+  frontPage.drawRectangle({
+    x: 0,
+    y: height - 40,
+    width,
+    height: 2,
+    color: rgb(0.88, 0.72, 0.22),
+  });
+
+  // School Name & Subtitle
+  frontPage.drawText(data.school.name, {
     x: 10,
-    y: height - 22,
+    y: height - 18,
     size: 10,
     font: bold,
     color: COLOR.white,
     maxWidth: width - 20,
   });
-
-  // Photo placeholder box — actual photo embedding needs a stored image URL;
-  // left as a bordered box so the card is still usable/printable without one.
-  page.drawRectangle({
+  frontPage.drawText("STUDENT IDENTITY CARD", {
     x: 10,
-    y: height - 110,
-    width: 60,
-    height: 66,
-    borderColor: COLOR.gray,
-    borderWidth: 1,
-  });
-  page.drawText("PHOTO", {
-    x: 20,
-    y: height - 80,
-    size: 8,
-    font,
-    color: COLOR.gray,
+    y: height - 30,
+    size: 6.5,
+    font: bold,
+    color: rgb(0.88, 0.72, 0.22),
   });
 
-  const textX = 80;
-  page.drawText(data.person.name, {
+  // Photo Frame on Left
+  const photoX = 10;
+  const photoY = height - 118;
+  const photoW = 58;
+  const photoH = 70;
+
+  frontPage.drawRectangle({
+    x: photoX,
+    y: photoY,
+    width: photoW,
+    height: photoH,
+    color: rgb(0.93, 0.95, 0.98),
+    borderColor: rgb(0.2, 0.35, 0.55),
+    borderWidth: 1.5,
+  });
+
+  // Avatar Icon Silhouette inside Photo Frame
+  const initials = data.person.name
+    .split(" ")
+    .map((n) => n[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
+  frontPage.drawRectangle({
+    x: photoX + 11,
+    y: photoY + 24,
+    width: 36,
+    height: 36,
+    color: rgb(0.82, 0.88, 0.95),
+  });
+  frontPage.drawText(initials || "ST", {
+    x: photoX + 18,
+    y: photoY + 36,
+    size: 14,
+    font: bold,
+    color: rgb(0.12, 0.25, 0.45),
+  });
+  frontPage.drawText("OFFICIAL PHOTO", {
+    x: photoX + 6,
+    y: photoY + 8,
+    size: 5.5,
+    font: bold,
+    color: rgb(0.4, 0.5, 0.65),
+  });
+
+  // Details Column
+  const textX = 76;
+  let textY = height - 54;
+
+  // Student Full Name
+  frontPage.drawText(data.person.name, {
     x: textX,
-    y: height - 52,
+    y: textY,
     size: 11,
     font: bold,
-    color: COLOR.black,
-    maxWidth: width - textX - 10,
+    color: rgb(0.08, 0.12, 0.2),
+    maxWidth: width - textX - 8,
   });
-  page.drawText(data.person.role, {
+  textY -= 12;
+
+  // Role Pill Badge
+  frontPage.drawRectangle({
     x: textX,
-    y: height - 66,
-    size: 8,
-    font,
-    color: COLOR.gray,
+    y: textY - 2,
+    width: 52,
+    height: 11,
+    color: rgb(0.9, 0.95, 1),
+    borderColor: rgb(0.65, 0.8, 0.98),
+    borderWidth: 0.5,
   });
-  if (data.person.className) {
-    page.drawText(`Class: ${data.person.className}`, {
+  frontPage.drawText("STUDENT", {
+    x: textX + 6,
+    y: textY + 1,
+    size: 6,
+    font: bold,
+    color: rgb(0.1, 0.35, 0.75),
+  });
+  textY -= 14;
+
+  // Field Rows
+  const drawField = (label: string, value: string) => {
+    frontPage.drawText(label, {
       x: textX,
-      y: height - 80,
-      size: 8,
-      font,
-      color: COLOR.black,
+      y: textY,
+      size: 6.5,
+      font: bold,
+      color: rgb(0.45, 0.5, 0.6),
     });
+    frontPage.drawText(value, {
+      x: textX + 42,
+      y: textY,
+      size: 6.5,
+      font: bold,
+      color: rgb(0.1, 0.15, 0.25),
+      maxWidth: width - (textX + 44),
+    });
+    textY -= 9.5;
+  };
+
+  drawField("Adm No:", data.person.idNumber);
+
+  const classLabel = data.person.className
+    ? `${data.person.className}${data.person.gradeLevelName ? ` (${data.person.gradeLevelName})` : ""}`
+    : data.person.gradeLevelName || "—";
+  drawField("Class:", classLabel);
+
+  if (data.person.rollNumber) {
+    drawField("Roll No:", data.person.rollNumber);
   }
-  page.drawText(`ID: ${data.person.idNumber}`, {
-    x: textX,
-    y: height - 94,
-    size: 8,
-    font,
-    color: COLOR.black,
+
+  if (data.person.gender) {
+    drawField("Gender:", data.person.gender === "MALE" ? "Male" : "Female");
+  }
+
+  if (data.person.dateOfBirth) {
+    drawField("DOB:", data.person.dateOfBirth);
+  }
+
+  // Bottom Simulated Barcode & Serial Band
+  frontPage.drawRectangle({
+    x: 0,
+    y: 0,
+    width,
+    height: 18,
+    color: rgb(0.94, 0.95, 0.97),
   });
-  if (data.person.validThrough) {
-    page.drawText(`Valid through: ${data.person.validThrough}`, {
-      x: textX,
-      y: height - 108,
-      size: 7,
-      font,
-      color: COLOR.gray,
+  frontPage.drawLine({
+    start: { x: 0, y: 18 },
+    end: { x: width, y: 18 },
+    thickness: 0.5,
+    color: rgb(0.82, 0.85, 0.9),
+  });
+
+  // Draw simulated barcode lines
+  const barStartX = 10;
+  for (let i = 0; i < 28; i++) {
+    const isThick = i % 3 === 0 || i % 7 === 0;
+    frontPage.drawLine({
+      start: { x: barStartX + i * 2.8, y: 4 },
+      end: { x: barStartX + i * 2.8, y: 14 },
+      thickness: isThick ? 1.5 : 0.8,
+      color: rgb(0.15, 0.15, 0.2),
     });
   }
 
-  page.drawLine({
-    start: { x: 10, y: 14 },
-    end: { x: width - 10, y: 14 },
-    thickness: 0.5,
-    color: COLOR.gray,
+  frontPage.drawText(`EXP: ${data.person.validThrough || "2026-2027"}`, {
+    x: width - 82,
+    y: 7,
+    size: 6.5,
+    font: bold,
+    color: rgb(0.3, 0.35, 0.45),
   });
-  page.drawText("If found, please return to the school office.", {
+
+  // ══════════════════════════════════════════════════════════════
+  // PAGE 2: BACK SIDE
+  // ══════════════════════════════════════════════════════════════
+  const backPage = doc.addPage([width, height]);
+
+  // Card Background
+  backPage.drawRectangle({
+    x: 0,
+    y: 0,
+    width,
+    height,
+    color: rgb(0.98, 0.98, 0.99),
+  });
+  backPage.drawRectangle({
+    x: 1,
+    y: 1,
+    width: width - 2,
+    height: height - 2,
+    borderColor: rgb(0.8, 0.84, 0.9),
+    borderWidth: 1,
+  });
+
+  // Top Slim Banner
+  backPage.drawRectangle({
+    x: 0,
+    y: height - 16,
+    width,
+    height: 16,
+    color: rgb(0.08, 0.16, 0.32),
+  });
+  backPage.drawText("TERMS & CONDITIONS", {
     x: 10,
-    y: 5,
-    size: 6,
+    y: height - 11,
+    size: 7,
+    font: bold,
+    color: COLOR.white,
+  });
+
+  let backY = height - 28;
+  const terms = [
+    "1. This card is the property of " + data.school.name + ".",
+    "2. It must be carried and displayed on campus at all times.",
+    "3. Non-transferable. Loss must be reported immediately.",
+    "4. If found, please return to the school administration office.",
+  ];
+
+  for (const t of terms) {
+    backPage.drawText(t, {
+      x: 10,
+      y: backY,
+      size: 5.5,
+      font,
+      color: rgb(0.3, 0.35, 0.4),
+      maxWidth: width - 20,
+    });
+    backY -= 8;
+  }
+
+  // School Contact Box
+  backY -= 2;
+  backPage.drawRectangle({
+    x: 10,
+    y: backY - 24,
+    width: width - 20,
+    height: 24,
+    color: rgb(0.93, 0.95, 0.98),
+    borderColor: rgb(0.85, 0.88, 0.93),
+    borderWidth: 0.5,
+  });
+
+  const contactText = [
+    data.school.address ? `Address: ${data.school.address}` : null,
+    data.school.phone ? `Tel: ${data.school.phone}` : null,
+    data.school.email ? `Email: ${data.school.email}` : null,
+  ]
+    .filter(Boolean)
+    .join("  |  ");
+
+  backPage.drawText("CAMPUS CONTACT INFO", {
+    x: 14,
+    y: backY - 7,
+    size: 5.5,
+    font: bold,
+    color: rgb(0.12, 0.25, 0.45),
+  });
+  backPage.drawText(contactText || "School Administration Office", {
+    x: 14,
+    y: backY - 17,
+    size: 5,
     font,
-    color: COLOR.gray,
+    color: rgb(0.35, 0.4, 0.48),
+    maxWidth: width - 28,
+  });
+
+  // Principal Signature & Official Seal Box
+  backPage.drawLine({
+    start: { x: width - 90, y: 22 },
+    end: { x: width - 15, y: 22 },
+    thickness: 0.8,
+    color: rgb(0.2, 0.25, 0.35),
+  });
+  backPage.drawText("Principal Signature", {
+    x: width - 82,
+    y: 14,
+    size: 6,
+    font: bold,
+    color: rgb(0.3, 0.35, 0.45),
+  });
+
+  // Seal badge simulation
+  backPage.drawRectangle({
+    x: 15,
+    y: 10,
+    width: 60,
+    height: 20,
+    color: rgb(0.92, 0.94, 0.98),
+    borderColor: rgb(0.8, 0.85, 0.92),
+    borderWidth: 0.5,
+  });
+  backPage.drawText("OFFICIAL SEAL", {
+    x: 20,
+    y: 17,
+    size: 5.5,
+    font: bold,
+    color: rgb(0.2, 0.35, 0.55),
   });
 
   return Buffer.from(await doc.save());

@@ -413,7 +413,7 @@ model TeacherProfile {
   classTeacherOf   Class?            @relation("ClassTeacher", fields: [classTeacherOfId], references: [id])
   // Classes this teacher has been assigned to (many-to-many)
   assignedClasses  Class[]           @relation("AssignedClasses")
-  gradeLevel       GradeLevel?       @relation(fields: [gradeLevelId], references: [id])
+  gradeLevel       GradeLevel?       @relation("TeacherGradeLevel", fields: [gradeLevelId], references: [id])
   subjectTeachings SubjectTeaching[]
   leaveRequests    LeaveRequest[]
   payrollRecords   PayrollRecord[]
@@ -473,8 +473,10 @@ model GradeLevel {
 
   school   School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   classes  Class[]
+  subjects Subject[]
   students StudentProfile[]
   exams    Exam[]
+  teachers TeacherProfile[] @relation("TeacherGradeLevel")
 
   @@unique([schoolId, level])
   @@map("grade_levels")
@@ -527,18 +529,18 @@ model AcademicTerm {
 }
 
 model Subject {
-  id          String   @id @default(uuid())
-  schoolId    String
-  name        String
-  code        String
-  description String?
+  id           String   @id @default(uuid())
+  schoolId     String
   gradeLevelId String?
-  gradeLevel  GradeLevel? @relation(fields: [gradeLevelId], references: [id])
-  creditHours Int      @default(3)
-  isCore      Boolean  @default(true)
-  createdAt   DateTime @default(now())
+  name         String
+  code         String
+  description  String?
+  creditHours  Int      @default(3)
+  isCore       Boolean  @default(true)
+  createdAt    DateTime @default(now())
 
   school      School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  gradeLevel  GradeLevel?       @relation(fields: [gradeLevelId], references: [id], onDelete: SetNull)
   teachings   SubjectTeaching[]
   assignments Assignment[]
   exams       Exam[]

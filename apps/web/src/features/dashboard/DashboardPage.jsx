@@ -10,6 +10,7 @@ import {
 } from "./components/index";
 import PageLoader from "../../components/ui/PageLoader";
 import { useTranslation } from "../../lib/i18n/I18nProvider";
+import DeadlinesOverviewWidget from "../../components/shared/DeadlinesOverviewWidget";
 import {
   GraduationCap,
   Users,
@@ -33,9 +34,10 @@ export default function DashboardPage() {
 
   // Role-based data fetching
   const { data: adminStats, isLoading: adminLoading } = useQuery({
-    queryKey: ["admin-dashboard"],
+    queryKey: ["dashboard", user?.role, user?.id],
     queryFn: () => api.get("/schools/dashboard").then((r) => r.data.data),
     enabled: isAdmin() || isTeacher() || isFinance(),
+    staleTime: 0,
   });
 
   const { data: studentResults } = useQuery({
@@ -59,8 +61,113 @@ export default function DashboardPage() {
 
   if (adminLoading && (isAdmin() || isTeacher())) return <PageLoader />;
 
-  // ── ADMIN DASHBOARD ────────────────────────────────────────────────────────
-  if (isAdmin() || isTeacher()) {
+  // ── TEACHER DASHBOARD ──────────────────────────────────────────────────────
+  if (isTeacher()) {
+    const d = adminStats;
+    const totalTaughtStudents =
+      d?.users?.students ?? d?.teacher?.totalStudents ?? 0;
+    const assignedClassesCount = d?.teacher?.classesCount ?? 0;
+    const subjectsCount = d?.teacher?.subjectsCount ?? 0;
+    const pendingGradingCount = d?.teacher?.pendingGrading ?? 0;
+
+    return (
+      <div className="space-y-6">
+        <div className="page-header">
+          <div>
+            <h1 className="page-title">
+              {t("dashboard.greeting_morning")}, {firstName} 👋
+            </h1>
+            <p className="page-subtitle">
+              Overview of your students, assigned classes, attendance records, and active teaching tasks.
+            </p>
+          </div>
+          <QuickActions role={user?.role} />
+        </div>
+
+        {/* Primary Teacher Stat Cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard
+            icon={GraduationCap}
+            label="My Students (Taught)"
+            value={totalTaughtStudents}
+            color="blue"
+            delta={
+              assignedClassesCount > 0
+                ? `${assignedClassesCount} Classes / Sections`
+                : "Active Students"
+            }
+          />
+          <StatCard
+            icon={Users}
+            label="Assigned Classes"
+            value={assignedClassesCount}
+            color="purple"
+            delta={
+              subjectsCount > 0
+                ? `${subjectsCount} Subjects Taught`
+                : "Teaching Sections"
+            }
+          />
+          <StatCard
+            icon={CalendarCheck}
+            label="Today's Present Students"
+            value={d?.todayAttendance?.present ?? 0}
+            color="green"
+            delta={`${d?.todayAttendance?.rate ?? 0}% Present Rate`}
+          />
+          <StatCard
+            icon={ClipboardList}
+            label="Pending Submissions"
+            value={pendingGradingCount}
+            color="amber"
+            delta="Awaiting Grading"
+          />
+        </div>
+
+        {/* Secondary Teacher Stat Cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard
+            icon={BookOpen}
+            label={t("dashboard.stat_active_assignments")}
+            value={d?.pendingAssignments ?? 0}
+            color="blue"
+          />
+          <StatCard
+            icon={CalendarCheck}
+            label={t("dashboard.stat_monthly_attendance")}
+            value={`${d?.monthlyAttendanceRate ?? 0}%`}
+            color="green"
+          />
+          <StatCard
+            icon={TrendingUp}
+            label={t("dashboard.stat_merits")}
+            value={d?.behaviour?.merits ?? 0}
+            color="green"
+          />
+          <StatCard
+            icon={AlertTriangle}
+            label={t("dashboard.stat_demerits")}
+            value={d?.behaviour?.demerits ?? 0}
+            color="red"
+          />
+        </div>
+
+        {/* Unified Deadlines & Compliance Monitor */}
+        <DeadlinesOverviewWidget />
+
+        {/* Charts + widgets */}
+        <div className="grid lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2">
+            <AttendanceTrendChart />
+          </div>
+          <UpcomingExams exams={d?.upcomingExams ?? []} />
+        </div>
+      </div>
+    );
+  }
+
+  // ── ADMIN / FINANCE DASHBOARD ──────────────────────────────────────────────
+  if (isAdmin() || isFinance()) {
     const d = adminStats;
     return (
       <div className="space-y-6">
@@ -140,6 +247,9 @@ export default function DashboardPage() {
             delta={`${d?.feeCollection?.totalCollected?.toLocaleString?.() ?? 0} ${t("dashboard.collected_suffix")}`}
           />
         </div>
+
+        {/* Unified Deadlines & Compliance Monitor */}
+        <DeadlinesOverviewWidget />
 
         {/* Charts + widgets */}
         <div className="grid lg:grid-cols-3 gap-6">
@@ -369,6 +479,9 @@ export default function DashboardPage() {
           />
         </div>
 
+        {/* Student Academic Deadlines Monitor */}
+        <DeadlinesOverviewWidget />
+
         <div className="grid lg:grid-cols-2 gap-6">
           <RecentActivity results={studentResults} />
           <div className="card">
@@ -407,6 +520,9 @@ export default function DashboardPage() {
           <p className="page-subtitle">{t("dashboard.subtitle_parent")}</p>
         </div>
       </div>
+
+      {/* Parent Children Homework & Deadlines Monitor */}
+      <DeadlinesOverviewWidget />
 
       <div className="grid lg:grid-cols-2 gap-6">
         <div className="card">

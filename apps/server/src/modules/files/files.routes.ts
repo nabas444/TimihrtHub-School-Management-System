@@ -46,6 +46,32 @@ if (CLOUDINARY_ENABLED && CLOUDINARY_URL) {
   }
 }
 
+// Helper to extract Cloudinary public ID and resource type from URL
+function parseCloudinaryUrl(urlStr: string) {
+  try {
+    const parsed = new URL(urlStr);
+    const parts = parsed.pathname.split("/");
+    const uploadIndex = parts.findIndex((p) => p === "upload");
+    if (uploadIndex === -1) return null;
+
+    const resourceType = parts[uploadIndex - 1] || "image";
+    let remainder = parts.slice(uploadIndex + 1);
+
+    if (remainder[0] && /^v\d+$/.test(remainder[0])) {
+      remainder = remainder.slice(1);
+    }
+
+    const fullPath = remainder.join("/");
+    const ext = path.extname(fullPath).replace(/^\./, "");
+    const publicId =
+      resourceType === "raw" ? fullPath : fullPath.replace(/\.[^/.]+$/, "");
+
+    return { resourceType, publicId, ext };
+  } catch {
+    return null;
+  }
+}
+
 const deleteStoredFile = async (fileUrl: string) => {
   if (fileUrl.startsWith("/uploads/")) {
     const filePath = path.join(UPLOAD_DIR, path.basename(fileUrl));
@@ -62,20 +88,27 @@ const deleteStoredFile = async (fileUrl: string) => {
   }
 
   if (CLOUDINARY_ENABLED && fileUrl.includes("res.cloudinary.com")) {
-    logger.warn(
-      `File ${fileUrl} is stored in Cloudinary. Remote deletion is not automatic because the current file schema stores only URL paths. Add public ID tracking to support remote deletes later.`,
-    );
+    const parsed = parseCloudinaryUrl(fileUrl);
+    if (parsed?.publicId) {
+      try {
+        await cloudinary.uploader.destroy(parsed.publicId, {
+          resource_type: parsed.resourceType,
+        });
+      } catch (e: any) {
+        logger.warn(`Cloudinary destroy error for ${parsed.publicId}:`, e.message);
+      }
+    }
     return;
   }
 
   if (process.env.AWS_S3_BUCKET) {
     logger.warn(
-      `File ${fileUrl} looks like it's stored outside /tmp/uploads, but no S3 client is wired up yet — it was not deleted from remote storage. Add an S3 delete call here when the upload path is migrated to S3.`,
+      `File ${fileUrl} is stored outside /tmp/uploads, but S3 client is not wired up yet.`,
     );
   }
 };
 
-// ── Multer config (disk storage — swap for S3 in production) ──────────────────
+// ── Multer config ────────────────────────────────────────────────────────────
 const storage = multer.diskStorage({
   destination: (_, __, cb) => cb(null, UPLOAD_DIR),
   filename: (_, file, cb) => {
@@ -103,6 +136,8 @@ const upload = multer({
       "video/mp4",
       "audio/mpeg",
       "text/plain",
+      "application/zip",
+      "application/x-zip-compressed",
     ];
     if (allowed.includes(file.mimetype)) cb(null, true);
     else cb(new Error(`File type ${file.mimetype} not allowed`));
@@ -125,16 +160,27 @@ router.post(
           category: z.string().optional(),
           classId: z.string().optional(),
           subjectId: z.string().optional(),
-          isPublic: z.string().optional(), // form-data sends strings
+          isPublic: z.string().optional(),
         })
         .parse(req.body);
 
       let fileUrl: string;
 
       if (CLOUDINARY_ENABLED) {
+        const isPdfOrDoc =
+          req.file.mimetype.includes("pdf") ||
+          req.file.mimetype.includes("msword") ||
+          req.file.mimetype.includes("officedocument") ||
+          req.file.mimetype.includes("text") ||
+          req.file.mimetype.includes("zip");
+
         const uploadResponse = await cloudinary.uploader.upload(req.file.path, {
           folder: process.env.CLOUDINARY_FOLDER || "timhirthub",
-          resource_type: "auto",
+          resource_type: isPdfOrDoc ? "raw" : "auto",
+          type: "upload",
+          access_mode: "public",
+          use_filename: true,
+          unique_filename: true,
         });
         fileUrl = uploadResponse.secure_url;
         await fs.unlink(req.file.path).catch(() => null);
@@ -175,7 +221,6 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
       string | undefined
     >;
 
-    // Students/parents only see public or class-scoped files
     const isStudentOrParent =
       req.user.role === Role.STUDENT || req.user.role === Role.PARENT;
     const visibilityFilter = isStudentOrParent
@@ -215,6 +260,124 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
     next(e);
   }
 });
+
+// ── Download file (Authenticated streaming proxy) ──────────────────────────────
+router.get(
+  "/:id/download",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const file = await db.file.findFirst({
+        where: { id: req.params.id, schoolId: req.user.schoolId },
+      });
+      if (!file) throw new AppError("File not found", 404);
+
+      // Check visibility for students/parents
+      const isStudentOrParent =
+        req.user.role === Role.STUDENT || req.user.role === Role.PARENT;
+      if (isStudentOrParent && !file.isPublic) {
+        if (file.classId) {
+          const sp = await db.studentProfile.findFirst({
+            where: { userId: req.user.id, classId: file.classId },
+          });
+          if (!sp)
+            throw new AppError("Not authorized to download this file", 403);
+        } else {
+          throw new AppError("Not authorized to download this file", 403);
+        }
+      }
+
+      // 1. Local disk storage
+      if (file.url.startsWith("/uploads/")) {
+        const filePath = path.join(UPLOAD_DIR, path.basename(file.url));
+        return res.download(filePath, file.name);
+      }
+
+      // 2. Cloudinary storage
+      if (CLOUDINARY_ENABLED && file.url.includes("res.cloudinary.com")) {
+        const parsed = parseCloudinaryUrl(file.url);
+        let downloadUrl = file.url;
+
+        if (parsed) {
+          try {
+            downloadUrl = cloudinary.utils.private_download_url(
+              parsed.publicId,
+              parsed.ext || undefined,
+              {
+                resource_type: parsed.resourceType as any,
+                type: "upload",
+                attachment: true,
+                expires_at: Math.floor(Date.now() / 1000) + 3600,
+              },
+            );
+          } catch (signErr) {
+            logger.warn("Could not sign Cloudinary URL:", signErr);
+          }
+        }
+
+        try {
+          const remoteRes = await fetch(downloadUrl);
+          if (remoteRes.ok) {
+            res.setHeader(
+              "Content-Type",
+              file.mimeType || "application/octet-stream",
+            );
+            res.setHeader(
+              "Content-Disposition",
+              `attachment; filename="${encodeURIComponent(file.name)}"`,
+            );
+            if (file.size) {
+              res.setHeader("Content-Length", String(file.size));
+            }
+            const buffer = Buffer.from(await remoteRes.arrayBuffer());
+            return res.send(buffer);
+          }
+        } catch (fetchErr) {
+          logger.warn("Failed to stream remote file directly:", fetchErr);
+        }
+
+        // Try direct fetch from original file.url with basic auth if needed
+        try {
+          const remoteRes = await fetch(file.url);
+          if (remoteRes.ok) {
+            res.setHeader(
+              "Content-Type",
+              file.mimeType || "application/octet-stream",
+            );
+            res.setHeader(
+              "Content-Disposition",
+              `attachment; filename="${encodeURIComponent(file.name)}"`,
+            );
+            const buffer = Buffer.from(await remoteRes.arrayBuffer());
+            return res.send(buffer);
+          }
+        } catch {}
+
+        return res.redirect(downloadUrl);
+      }
+
+      // 3. Generic remote fallback
+      try {
+        const remoteRes = await fetch(file.url);
+        if (remoteRes.ok) {
+          res.setHeader(
+            "Content-Type",
+            file.mimeType || "application/octet-stream",
+          );
+          res.setHeader(
+            "Content-Disposition",
+            `attachment; filename="${encodeURIComponent(file.name)}"`,
+          );
+          const buffer = Buffer.from(await remoteRes.arrayBuffer());
+          return res.send(buffer);
+        }
+      } catch {}
+
+      return res.redirect(file.url);
+    } catch (e) {
+      next(e);
+    }
+  },
+);
 
 // ── Delete file ───────────────────────────────────────────────────────────────
 router.delete(

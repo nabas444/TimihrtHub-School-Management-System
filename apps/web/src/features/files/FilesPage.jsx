@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Upload, FileText, Trash2, Download, Image, File } from "lucide-react";
 import api from "../../lib/api";
+import { downloadFile } from "../../lib/downloadFile";
 import { Badge, EmptyState, Pagination } from "../../components/ui/index";
 import PageLoader from "../../components/ui/PageLoader";
 import { useAuthStore } from "../../store/authStore";
@@ -178,13 +179,24 @@ export default function FilesPage() {
                     </td>
                     <td>
                       <div className="flex items-center gap-1">
-                        <a
-                          href={f.url}
-                          download
-                          className="btn-ghost btn-icon text-gray-400"
+                        <button
+                          onClick={() => {
+                            toast.promise(
+                              downloadFile(`/files/${f.id}/download`, f.name),
+                              {
+                                loading: `Downloading ${f.name}…`,
+                                success: "Download completed!",
+                                error: (err) =>
+                                  err.response?.data?.message ||
+                                  "Could not download file.",
+                              },
+                            );
+                          }}
+                          className="btn-ghost btn-icon text-gray-400 hover:text-primary-600"
+                          title={`Download ${f.name}`}
                         >
                           <Download className="w-4 h-4" />
-                        </a>
+                        </button>
                         {(isStaff || f.uploadedBy?.id === user?.id) && (
                           <button
                             onClick={() => deleteMutation.mutate(f.id)}

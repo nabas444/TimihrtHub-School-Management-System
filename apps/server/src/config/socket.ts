@@ -65,8 +65,20 @@ export const initSocket = (httpServer: HttpServer): SocketServer => {
     memberships.forEach(({ roomId }) => s.join(`room:${roomId}`));
 
     // ── Chat events ──────────────────────────────────────────────────────
+    s.on('chat:join', (data: { roomId: string }) => {
+      if (data?.roomId) {
+        s.join(`room:${data.roomId}`);
+      }
+    });
+
     s.on('chat:send', async (data: { roomId: string; content: string; type?: string; replyToId?: string }) => {
       try {
+        const { chatBlockedUsers } = await import('../modules/chat/chat.routes');
+        if (chatBlockedUsers.has(s.userId)) {
+          s.emit('error', { message: 'Your chat privileges have been suspended by the administration' });
+          return;
+        }
+
         const isMember = await db.chatRoomMember.findUnique({
           where: { roomId_userId: { roomId: data.roomId, userId: s.userId } },
         });
@@ -85,7 +97,7 @@ export const initSocket = (httpServer: HttpServer): SocketServer => {
           },
           include: {
             sender: {
-              select: { id: true, firstName: true, lastName: true, avatar: true },
+              select: { id: true, firstName: true, lastName: true, avatar: true, role: true },
             },
             replyTo: {
               select: { id: true, content: true, senderId: true },
@@ -93,8 +105,15 @@ export const initSocket = (httpServer: HttpServer): SocketServer => {
           },
         });
 
-        // Broadcast to all room members
+        // Broadcast to all room members via room and user channels
         io.to(`room:${data.roomId}`).emit('chat:message', message);
+        const members = await db.chatRoomMember.findMany({
+          where: { roomId: data.roomId, leftAt: null },
+          select: { userId: true },
+        });
+        members.forEach((m) => {
+          io.to(`user:${m.userId}`).emit('chat:message', message);
+        });
 
         // Update room's updatedAt
         await db.chatRoom.update({
@@ -104,6 +123,68 @@ export const initSocket = (httpServer: HttpServer): SocketServer => {
       } catch (err) {
         logger.error('chat:send error', err);
         s.emit('error', { message: 'Failed to send message' });
+      }
+    });
+
+    s.on('chat:edit', async (data: { messageId: string; content: string }) => {
+      try {
+        const msg = await db.message.findUnique({ where: { id: data.messageId } });
+        if (!msg) return;
+        if (msg.senderId !== s.userId && s.role !== 'ADMIN' && s.role !== 'SUPER_ADMIN') {
+          s.emit('error', { message: 'Cannot edit another user’s message' });
+          return;
+        }
+
+        const updated = await db.message.update({
+          where: { id: data.messageId },
+          data: { content: data.content, isEdited: true, updatedAt: new Date() },
+          include: {
+            sender: { select: { id: true, firstName: true, lastName: true, avatar: true, role: true } },
+            replyTo: { select: { id: true, content: true, senderId: true } },
+          },
+        });
+
+        io.to(`room:${msg.roomId}`).emit('chat:edit', updated);
+        const members = await db.chatRoomMember.findMany({
+          where: { roomId: msg.roomId, leftAt: null },
+          select: { userId: true },
+        });
+        members.forEach((m) => {
+          io.to(`user:${m.userId}`).emit('chat:edit', updated);
+        });
+      } catch (err) {
+        logger.error('chat:edit error', err);
+      }
+    });
+
+    s.on('chat:delete', async (data: { messageId: string }) => {
+      try {
+        const msg = await db.message.findUnique({ where: { id: data.messageId } });
+        if (!msg) return;
+        if (msg.senderId !== s.userId && s.role !== 'ADMIN' && s.role !== 'SUPER_ADMIN') {
+          s.emit('error', { message: 'Cannot delete another user’s message' });
+          return;
+        }
+
+        await db.message.update({
+          where: { id: data.messageId },
+          data: { isDeleted: true, content: 'This message was deleted' },
+        });
+
+        const deletePayload = {
+          messageId: msg.id,
+          roomId: msg.roomId,
+        };
+        io.to(`room:${msg.roomId}`).emit('chat:delete', deletePayload);
+        const members = await db.chatRoomMember.findMany({
+          where: { roomId: msg.roomId, leftAt: null },
+          select: { userId: true },
+        });
+        members.forEach((m) => {
+          io.to(`user:${m.userId}`).emit('chat:delete', deletePayload);
+        });
+      } catch (err) {
+        logger.error('chat:delete error', err);
       }
     });
 

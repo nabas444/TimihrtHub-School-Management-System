@@ -15,29 +15,136 @@ import { Role } from "@prisma/client";
 const listRecords = async (
   schoolId: string,
   params: {
+    search?: string;
     studentId?: string;
     type?: BehaviourType;
+    severity?: BehaviourSeverity;
+    gradeLevelId?: string;
+    classId?: string;
+    isResolved?: boolean;
+    sortBy?: string;
     page: number;
     limit: number;
   },
 ) => {
-  const { page, limit, studentId, type } = params;
+  const {
+    page,
+    limit,
+    search,
+    studentId,
+    type,
+    severity,
+    gradeLevelId,
+    classId,
+    isResolved,
+    sortBy,
+  } = params;
   const skip = (page - 1) * limit;
-  const where = {
-    schoolId,
-    ...(studentId && { studentId }),
-    ...(type && { type }),
-  };
+
+  const where: any = { schoolId };
+
+  if (search && search.trim()) {
+    const q = search.trim();
+    where.OR = [
+      { title: { contains: q, mode: "insensitive" } },
+      { description: { contains: q, mode: "insensitive" } },
+      { student: { is: { firstName: { contains: q, mode: "insensitive" } } } },
+      { student: { is: { lastName: { contains: q, mode: "insensitive" } } } },
+      {
+        student: {
+          is: {
+            studentProfile: {
+              is: { admissionNumber: { contains: q, mode: "insensitive" } },
+            },
+          },
+        },
+      },
+    ];
+  }
+
+  if (studentId && studentId !== "ALL") {
+    where.studentId = studentId;
+  }
+
+  if (type && (type as string) !== "ALL") {
+    where.type = type;
+  }
+
+  if (severity && (severity as string) !== "ALL") {
+    where.severity = severity;
+  }
+
+  if (classId && classId !== "ALL") {
+    where.student = {
+      is: {
+        ...(where.student?.is || {}),
+        studentProfile: { is: { classId } },
+      },
+    };
+  }
+
+  if (gradeLevelId && gradeLevelId !== "ALL") {
+    where.student = {
+      is: {
+        ...(where.student?.is || {}),
+        studentProfile: {
+          is: {
+            OR: [
+              { gradeLevelId },
+              { class: { is: { gradeLevelId } } },
+            ],
+          },
+        },
+      },
+    };
+  }
+
+  if (isResolved !== undefined) {
+    where.isResolved = isResolved;
+  }
+
+  let orderBy: any = { date: "desc" };
+  if (sortBy === "date-asc") {
+    orderBy = { date: "asc" };
+  } else if (sortBy === "points-desc") {
+    orderBy = { points: "desc" };
+  } else if (sortBy === "points-asc") {
+    orderBy = { points: "asc" };
+  } else if (sortBy === "title-asc") {
+    orderBy = { title: "asc" };
+  }
 
   const [records, total] = await Promise.all([
     db.behaviourRecord.findMany({
       where,
       skip,
       take: limit,
-      orderBy: { date: "desc" },
+      orderBy,
       include: {
         student: {
-          select: { id: true, firstName: true, lastName: true, avatar: true },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatar: true,
+            gender: true,
+            studentProfile: {
+              select: {
+                admissionNumber: true,
+                rollNumber: true,
+                classId: true,
+                gradeLevelId: true,
+                class: {
+                  select: {
+                    id: true,
+                    name: true,
+                    gradeLevel: { select: { id: true, name: true } },
+                  },
+                },
+                gradeLevel: { select: { id: true, name: true } },
+              },
+            },
+          },
         },
         reportedBy: { select: { id: true, firstName: true, lastName: true } },
       },
@@ -176,10 +283,29 @@ router.get(
     try {
       const page = parseInt(req.query.page as string) || 1;
       const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
-      const { studentId, type } = req.query as Record<string, string>;
+      const search = req.query.search as string | undefined;
+      const studentId = req.query.studentId as string | undefined;
+      const type = req.query.type as BehaviourType | undefined;
+      const severity = req.query.severity as BehaviourSeverity | undefined;
+      const gradeLevelId = req.query.gradeLevelId as string | undefined;
+      const classId = req.query.classId as string | undefined;
+      const isResolved =
+        req.query.isResolved === "true"
+          ? true
+          : req.query.isResolved === "false"
+          ? false
+          : undefined;
+      const sortBy = req.query.sortBy as string | undefined;
+
       const { records, total } = await listRecords(req.user.schoolId, {
+        search,
         studentId,
-        type: type as BehaviourType,
+        type,
+        severity,
+        gradeLevelId,
+        classId,
+        isResolved,
+        sortBy,
         page,
         limit,
       });
@@ -284,6 +410,23 @@ router.patch(
         await resolveRecord(req.params.id, req.user.schoolId, actionTaken),
         "Resolved",
       );
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+router.delete(
+  "/:id",
+  authorize(...isStaff),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const record = await db.behaviourRecord.findFirst({
+        where: { id: req.params.id, schoolId: req.user.schoolId },
+      });
+      if (!record) throw new AppError("Record not found", 404);
+      await db.behaviourRecord.delete({ where: { id: req.params.id } });
+      sendSuccess(res, null, "Record deleted");
     } catch (e) {
       next(e);
     }

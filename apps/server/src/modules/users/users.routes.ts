@@ -16,13 +16,9 @@ router.get(
   UsersController.getSchoolStats,
 );
 
-// ID card (own, or any user for admin/teacher — teachers need this for class ID card runs)
+// ID card (own, or student/child/staff ID card)
 router.get("/me/id-card", UsersController.downloadIdCard);
-router.get(
-  "/:id/id-card",
-  authorize(Role.ADMIN, Role.SUPER_ADMIN, Role.TEACHER),
-  UsersController.downloadIdCard,
-);
+router.get("/:id/id-card", UsersController.downloadIdCard);
 
 // Admin CRUD
 router.get(

@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from "express";
 import { z } from "zod";
 import { Role, Gender } from "@prisma/client";
+import { db } from "../../config/database";
+import { AppError } from "../../middleware/errorHandler";
 import * as UsersService from "./users.service";
 import {
   sendSuccess,
@@ -48,6 +50,11 @@ const UpdateUserSchema = z.object({
   isActive: z.boolean().optional(),
   smsOptIn: z.boolean().optional(), // Phase 5 — parent SMS alert opt-in
   rollNumber: z.string().optional(),
+  qualification: z.string().optional(),
+  specialization: z.string().optional(),
+  employeeId: z.string().optional(),
+  department: z.string().optional(),
+  occupation: z.string().optional(),
 });
 
 export const listUsers = async (
@@ -60,11 +67,17 @@ export const listUsers = async (
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
     const role = req.query.role as Role | undefined;
     const search = req.query.search as string | undefined;
+    const classId = req.query.classId as string | undefined;
+    const gradeLevelId = req.query.gradeLevelId as string | undefined;
+    const gender = req.query.gender as Gender | undefined;
+    const enrollmentStatus = req.query.enrollmentStatus as string | undefined;
+    const sortBy = req.query.sortBy as string | undefined;
+
     const classIds = (req.query.classIds as string | undefined)
       ? (req.query.classIds as string).split(",").filter(Boolean)
       : undefined;
     const isActive =
-      req.query.isActive !== undefined
+      req.query.isActive !== undefined && req.query.isActive !== "ALL"
         ? req.query.isActive === "true"
         : undefined;
 
@@ -75,6 +88,11 @@ export const listUsers = async (
       limit,
       isActive,
       classIds,
+      classId,
+      gradeLevelId,
+      gender,
+      enrollmentStatus,
+      sortBy,
     });
     sendSuccess(
       res,
@@ -232,6 +250,26 @@ export const downloadIdCard = async (
 ) => {
   try {
     const targetId = req.params.id ?? req.user.id;
+    const isStaff = (
+      [Role.ADMIN, Role.SUPER_ADMIN, Role.TEACHER] as Role[]
+    ).includes(req.user.role as Role);
+    const isSelf = targetId === req.user.id;
+    let isLinkedParent = false;
+
+    if (!isStaff && !isSelf && req.user.role === Role.PARENT) {
+      const link = await db.parentStudentLink.findFirst({
+        where: {
+          studentProfile: { userId: targetId },
+          parentProfile: { userId: req.user.id },
+        },
+      });
+      isLinkedParent = !!link;
+    }
+
+    if (!isStaff && !isSelf && !isLinkedParent) {
+      throw new AppError("Not authorized to download this ID card", 403);
+    }
+
     const { pdf, fileName } = await UsersService.getIdCardPdf(
       targetId,
       req.user.schoolId,

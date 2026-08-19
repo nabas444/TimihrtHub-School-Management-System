@@ -1,4 +1,7 @@
+import { useEffect } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import api from "../../lib/api";
 import { useAuthStore } from "../../store/authStore";
 import { useUIStore } from "../../store/uiStore";
 import { useChatStore } from "../../store/chatStore";
@@ -26,6 +29,7 @@ import {
   UserCog,
   CreditCard,
   GraduationCap,
+  Sparkles,
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -62,6 +66,7 @@ const NAV_CONFIG = {
     {
       section: "nav.section_management",
       items: [
+        { to: "/clubs", icon: Sparkles, label: "nav.clubs" },
         { to: "/fees", icon: DollarSign, label: "nav.fees" },
         { to: "/library", icon: Library, label: "nav.library" },
         { to: "/staff", icon: UserCog, label: "nav.staff_hr" },
@@ -109,6 +114,7 @@ const NAV_CONFIG = {
     {
       section: "nav.section_resources",
       items: [
+        { to: "/clubs", icon: Sparkles, label: "nav.clubs" },
         { to: "/files", icon: FileText, label: "nav.files" },
         { to: "/library", icon: Library, label: "nav.library" },
         {
@@ -182,6 +188,7 @@ const NAV_CONFIG = {
     {
       section: "nav.section_resources",
       items: [
+        { to: "/clubs", icon: Sparkles, label: "nav.clubs" },
         { to: "/files", icon: FileText, label: "nav.resources" },
         { to: "/library", icon: Library, label: "nav.library" },
         { to: "/fees", icon: DollarSign, label: "nav.my_fees" },
@@ -206,6 +213,7 @@ const NAV_CONFIG = {
     {
       section: "nav.section_child_progress",
       items: [
+        { to: "/clubs", icon: Sparkles, label: "nav.clubs" },
         { to: "/grades", icon: BookOpen, label: "nav.grades" },
         { to: "/attendance", icon: CalendarCheck, label: "nav.attendance" },
         { to: "/assignments", icon: ClipboardList, label: "nav.assignments" },
@@ -241,9 +249,28 @@ const NAV_CONFIG = {
 export default function Sidebar() {
   const { user, logout } = useAuthStore();
   const { sidebarCollapsed, collapseSidebar, sidebarOpen } = useUIStore();
-  const { totalUnread } = useChatStore();
+  const { setRooms, setUnread, totalUnread } = useChatStore();
   const { t } = useTranslation();
   const navigate = useNavigate();
+
+  // Global chat rooms and unread query
+  const { data: rooms } = useQuery({
+    queryKey: ["chat-rooms"],
+    queryFn: () => api.get("/chat/rooms").then((r) => r.data.data),
+    enabled: !!user,
+    refetchInterval: 15000,
+  });
+
+  useEffect(() => {
+    if (rooms && Array.isArray(rooms)) {
+      setRooms(rooms);
+      rooms.forEach((r) => {
+        if (r.roomId && typeof r.unread === "number") {
+          setUnread(r.roomId, r.unread);
+        }
+      });
+    }
+  }, [rooms, setRooms, setUnread]);
 
   const navItems = NAV_CONFIG[user?.role] ?? NAV_CONFIG.STUDENT;
   const unread = totalUnread();
@@ -299,23 +326,31 @@ export default function Sidebar() {
                 key={item.to}
                 to={item.to}
                 className={({ isActive }) =>
-                  clsx(isActive ? "nav-item-active" : "nav-item", "relative")
+                  clsx(
+                    isActive ? "nav-item-active" : "nav-item",
+                    "relative flex items-center gap-3"
+                  )
                 }
                 title={sidebarCollapsed ? t(item.label) : undefined}
               >
-                <item.icon className="w-5 h-5 flex-shrink-0" />
+                <div className="relative flex-shrink-0 flex items-center justify-center">
+                  <item.icon className="w-5 h-5 flex-shrink-0" />
+                  {item.badge === "chat" && unread > 0 && (
+                    <span
+                      className="absolute -top-1.5 -right-2 min-w-[17px] h-[17px] px-1 bg-red-500 text-white text-[10px] font-black rounded-full flex items-center justify-center shadow-xs border-2 border-white dark:border-gray-900 leading-none animate-pulse"
+                      title={`${unread} unread message${unread > 1 ? "s" : ""}`}
+                    >
+                      {unread > 99 ? "99+" : unread}
+                    </span>
+                  )}
+                </div>
+
                 {!sidebarCollapsed && (
-                  <span className="flex-1">{t(item.label)}</span>
+                  <span className="flex-1 truncate">{t(item.label)}</span>
                 )}
-                {item.badge === "chat" && unread > 0 && (
-                  <span
-                    className={clsx(
-                      "bg-primary-600 text-white text-xs rounded-full flex items-center justify-center font-bold",
-                      sidebarCollapsed
-                        ? "absolute top-1 right-1 w-4 h-4 text-[10px]"
-                        : "w-5 h-5",
-                    )}
-                  >
+
+                {!sidebarCollapsed && item.badge === "chat" && unread > 0 && (
+                  <span className="ml-auto px-2 py-0.5 bg-red-500 text-white text-[11px] font-extrabold rounded-full shadow-xs">
                     {unread > 99 ? "99+" : unread}
                   </span>
                 )}

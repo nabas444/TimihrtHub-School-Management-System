@@ -33,15 +33,14 @@ async function main() {
 
   console.log(`✅ School: ${school.name} (${school.id})`);
 
-  // ── Grade levels ───────────────────────────────────────────────────────────
+  // ── Grade levels (Grade 1 to Grade 12) ──────────────────────────────────
   const grades = await Promise.all(
-    ["Grade 1", "Grade 2", "Grade 9", "Grade 10", "Grade 11", "Grade 12"].map(
-      (name, i) =>
-        db.gradeLevel.upsert({
-          where: { schoolId_level: { schoolId: school.id, level: i + 1 } },
-          update: {},
-          create: { schoolId: school.id, name, level: i + 1 },
-        }),
+    Array.from({ length: 12 }, (_, i) => i + 1).map((level) =>
+      db.gradeLevel.upsert({
+        where: { schoolId_level: { schoolId: school.id, level } },
+        update: { name: `Grade ${level}` },
+        create: { schoolId: school.id, name: `Grade ${level}`, level },
+      }),
     ),
   );
 
@@ -57,7 +56,7 @@ async function main() {
     update: {},
     create: {
       schoolId: school.id,
-      gradeLevelId: grades[3].id, // Grade 10
+      gradeLevelId: grades[9].id, // Grade 10
       name: "10A",
       academicYear: "2024/2025",
       capacity: 35,

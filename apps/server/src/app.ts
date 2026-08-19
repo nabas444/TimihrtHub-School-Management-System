@@ -34,6 +34,8 @@ import libraryRoutes from "./modules/library/library.routes";
 import staffRoutes from "./modules/staff/staff.routes";
 import fileRoutes from "./modules/files/files.routes";
 import billingRoutes, { handleStripeWebhook } from "./modules/billing/billing.routes";
+import deadlineRoutes from "./modules/deadlines/deadlines.routes";
+import clubRoutes from "./modules/clubs/clubs.routes";
 
 // ── Background job workers ───────────────────────────────────────────────────
 // Importing these starts their BullMQ Worker instances (side effect on import).
@@ -41,6 +43,7 @@ import billingRoutes, { handleStripeWebhook } from "./modules/billing/billing.ro
 // import them first — so it's obvious the queue consumers are actually running.
 import "./jobs/emailWorker";
 import "./jobs/notifWorker";
+import { startDeadlineEngine } from "./jobs/deadlineEngine";
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -138,6 +141,8 @@ app.use("/api/v1/library", libraryRoutes);
 app.use("/api/v1/staff", staffRoutes);
 app.use("/api/v1/files", fileRoutes);
 app.use("/api/v1/billing", billingRoutes);
+app.use("/api/v1/deadlines", deadlineRoutes);
+app.use("/api/v1/clubs", clubRoutes);
 
 // ── 404 + Error handlers ─────────────────────────────────────────────────────
 app.use(notFoundHandler);
@@ -153,6 +158,9 @@ const start = async () => {
   try {
     await connectDatabase();
     await connectRedis();
+
+    // Start background deadline engine (periodic offline evaluation & notification dispatch)
+    startDeadlineEngine(5);
 
     httpServer.listen(PORT, () => {
       logger.info(`

@@ -57,6 +57,8 @@ const AnnouncementsPage = lazy(
 const MeetingsPage = lazy(() => import("../features/meetings/MeetingsPage"));
 const FeesPage = lazy(() => import("../features/fees/FeesPage"));
 const LibraryPage = lazy(() => import("../features/library/LibraryPage"));
+const ClubsPage = lazy(() => import("../features/clubs/ClubsPage"));
+const ClubDetailPage = lazy(() => import("../features/clubs/ClubDetailPage"));
 const FilesPage = lazy(() => import("../features/files/FilesPage"));
 const StaffPage = lazy(() => import("../features/staff/StaffPage"));
 const LeavePage = lazy(() => import("../features/staff/LeavePage"));
@@ -321,6 +323,22 @@ export const router = createBrowserRouter([
         element: (
           <S>
             <LibraryPage />
+          </S>
+        ),
+      },
+      {
+        path: "/clubs",
+        element: (
+          <S>
+            <ClubsPage />
+          </S>
+        ),
+      },
+      {
+        path: "/clubs/:id",
+        element: (
+          <S>
+            <ClubDetailPage />
           </S>
         ),
       },

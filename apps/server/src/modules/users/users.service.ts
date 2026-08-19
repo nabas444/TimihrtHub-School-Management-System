@@ -16,36 +16,89 @@ export const listUsers = async (
     limit: number;
     isActive?: boolean;
     classIds?: string[];
+    classId?: string;
+    gradeLevelId?: string;
+    gender?: Gender;
+    enrollmentStatus?: string;
+    sortBy?: string;
   },
 ) => {
-  const { role, search, page, limit, isActive, classIds } = params;
+  const {
+    role,
+    search,
+    page,
+    limit,
+    isActive,
+    classIds,
+    classId,
+    gradeLevelId,
+    gender,
+    enrollmentStatus,
+    sortBy,
+  } = params;
   const skip = (page - 1) * limit;
 
-  const where = {
+  const where: any = {
     schoolId,
     ...(role && { role }),
     ...(isActive !== undefined && { isActive }),
-    ...(search && {
-      OR: [
-        { firstName: { contains: search, mode: "insensitive" as const } },
-        { lastName: { contains: search, mode: "insensitive" as const } },
-        { email: { contains: search, mode: "insensitive" as const } },
-      ],
-    }),
-    // If classIds provided and we're filtering students, restrict to those student profiles
-    ...(classIds && classIds.length > 0
-      ? {
-          studentProfile: { is: { classId: { in: classIds } } },
-        }
-      : {}),
+    ...(gender && { gender }),
   };
+
+  if (search && search.trim()) {
+    const q = search.trim();
+    where.OR = [
+      { firstName: { contains: q, mode: "insensitive" } },
+      { lastName: { contains: q, mode: "insensitive" } },
+      { email: { contains: q, mode: "insensitive" } },
+      { phone: { contains: q, mode: "insensitive" } },
+      { studentProfile: { is: { admissionNumber: { contains: q, mode: "insensitive" } } } },
+      { studentProfile: { is: { rollNumber: { contains: q, mode: "insensitive" } } } },
+    ];
+  }
+
+  // Student profile filters
+  const studentFilters: any = {};
+  if (classId && classId !== "ALL") {
+    studentFilters.classId = classId;
+  } else if (classIds && classIds.length > 0) {
+    studentFilters.classId = { in: classIds };
+  }
+
+  if (gradeLevelId && gradeLevelId !== "ALL") {
+    studentFilters.OR = [
+      { gradeLevelId },
+      { class: { is: { gradeLevelId } } },
+    ];
+  }
+
+  if (enrollmentStatus === "ENROLLED") {
+    studentFilters.graduatedAt = null;
+  } else if (enrollmentStatus === "GRADUATED") {
+    studentFilters.graduatedAt = { not: null };
+  }
+
+  if (Object.keys(studentFilters).length > 0) {
+    where.studentProfile = { is: studentFilters };
+  }
+
+  let orderBy: any = { createdAt: "desc" };
+  if (sortBy === "name-asc") {
+    orderBy = [{ firstName: "asc" }, { lastName: "asc" }];
+  } else if (sortBy === "name-desc") {
+    orderBy = [{ firstName: "desc" }, { lastName: "desc" }];
+  } else if (sortBy === "created-asc") {
+    orderBy = { createdAt: "asc" };
+  } else if (sortBy === "created-desc") {
+    orderBy = { createdAt: "desc" };
+  }
 
   const [users, total] = await Promise.all([
     db.user.findMany({
       where,
       skip,
       take: limit,
-      orderBy: { createdAt: "desc" },
+      orderBy,
       select: {
         id: true,
         schoolId: true,
@@ -56,6 +109,7 @@ export const listUsers = async (
         phone: true,
         avatar: true,
         gender: true,
+        dateOfBirth: true,
         isActive: true,
         lastLoginAt: true,
         createdAt: true,
@@ -65,7 +119,17 @@ export const listUsers = async (
             admissionNumber: true,
             rollNumber: true,
             classId: true,
-            class: { select: { id: true, name: true } },
+            gradeLevelId: true,
+            class: {
+              select: {
+                id: true,
+                name: true,
+                gradeLevel: { select: { id: true, name: true, level: true } },
+              },
+            },
+            gradeLevel: { select: { id: true, name: true, level: true } },
+            enrolledAt: true,
+            graduatedAt: true,
           },
         },
         teacherProfile: {
@@ -385,6 +449,11 @@ export const updateUser = async (
     isActive: boolean;
     smsOptIn: boolean;
     rollNumber: string;
+    qualification: string;
+    specialization: string;
+    employeeId: string;
+    department: string;
+    occupation: string;
   }>,
 ) => {
   const user = await db.user.findFirst({ where: { id, schoolId } });
@@ -396,6 +465,56 @@ export const updateUser = async (
     updateData.studentProfile = {
       update: {
         rollNumber: data.rollNumber,
+      },
+    };
+  }
+
+  if (
+    data.qualification !== undefined ||
+    data.specialization !== undefined ||
+    data.employeeId !== undefined
+  ) {
+    delete updateData.qualification;
+    delete updateData.specialization;
+    delete updateData.employeeId;
+    updateData.teacherProfile = {
+      upsert: {
+        create: {
+          employeeId: data.employeeId ?? `TCH${Date.now()}`,
+          qualification: data.qualification,
+          specialization: data.specialization,
+        },
+        update: {
+          ...(data.qualification !== undefined && {
+            qualification: data.qualification,
+          }),
+          ...(data.specialization !== undefined && {
+            specialization: data.specialization,
+          }),
+          ...(data.employeeId !== undefined && {
+            employeeId: data.employeeId,
+          }),
+        },
+      },
+    };
+  }
+
+  if (data.department !== undefined) {
+    delete updateData.department;
+    updateData.adminProfile = {
+      upsert: {
+        create: { department: data.department },
+        update: { department: data.department },
+      },
+    };
+  }
+
+  if (data.occupation !== undefined) {
+    delete updateData.occupation;
+    updateData.parentProfile = {
+      upsert: {
+        create: { occupation: data.occupation },
+        update: { occupation: data.occupation },
       },
     };
   }
@@ -528,7 +647,12 @@ export const getIdCardPdf = async (userId: string, schoolId: string) => {
   const user = await db.user.findFirst({
     where: { id: userId, schoolId },
     include: {
-      studentProfile: { include: { class: true } },
+      studentProfile: {
+        include: {
+          class: { include: { gradeLevel: true } },
+          gradeLevel: true,
+        },
+      },
       teacherProfile: true,
       school: {
         select: { name: true, address: true, phone: true, email: true },
@@ -543,6 +667,15 @@ export const getIdCardPdf = async (userId: string, schoolId: string) => {
     user.id.slice(0, 8).toUpperCase();
   const roleLabel = user.role.charAt(0) + user.role.slice(1).toLowerCase();
 
+  const className = user.studentProfile?.class?.name ?? null;
+  const gradeLevelName =
+    user.studentProfile?.class?.gradeLevel?.name ??
+    user.studentProfile?.gradeLevel?.name ??
+    null;
+
+  const currentYear = new Date().getFullYear();
+  const validThrough = `${currentYear} - ${currentYear + 1}`;
+
   const { generateIdCardPdf } = await import("../../utils/pdf");
   const pdf = await generateIdCardPdf({
     school: {
@@ -555,8 +688,16 @@ export const getIdCardPdf = async (userId: string, schoolId: string) => {
       name: `${user.firstName} ${user.lastName}`,
       role: roleLabel,
       idNumber,
-      className: user.studentProfile?.class?.name ?? null,
-      validThrough: undefined,
+      className,
+      gradeLevelName,
+      gender: user.gender ?? null,
+      dateOfBirth: user.dateOfBirth
+        ? user.dateOfBirth.toISOString().split("T")[0]
+        : null,
+      phone: user.phone ?? null,
+      email: user.email ?? null,
+      rollNumber: user.studentProfile?.rollNumber ?? null,
+      validThrough,
     },
   });
 

@@ -11,10 +11,226 @@ import { Role } from "@prisma/client";
 // SERVICE
 // ════════════════════════════════════════════════════════════
 
+const ALL_DAYS: DayOfWeek[] = [
+  DayOfWeek.MONDAY,
+  DayOfWeek.TUESDAY,
+  DayOfWeek.WEDNESDAY,
+  DayOfWeek.THURSDAY,
+  DayOfWeek.FRIDAY,
+  DayOfWeek.SATURDAY,
+  DayOfWeek.SUNDAY,
+];
+
 const getClassTimetable = async (classId: string, schoolId: string) => {
   const slots = await db.timetableSlot.findMany({
     where: { classId, class: { schoolId } },
     include: {
+      class: { select: { id: true, name: true, academicYear: true } },
+      subjectTeaching: {
+        include: {
+          subject: { select: { id: true, name: true, code: true } },
+          teacherProfile: {
+            include: {
+              user: { select: { id: true, firstName: true, lastName: true, email: true } },
+            },
+          },
+        },
+      },
+    },
+    orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }],
+  });
+
+  const grouped = ALL_DAYS.reduce<Record<string, typeof slots>>((acc, day) => {
+    acc[day] = slots.filter((s) => s.dayOfWeek === day);
+    return acc;
+  }, {});
+
+  return {
+    grouped,
+    slots,
+  };
+};
+
+const getTeacherTimetable = async (teacherUserId: string, schoolId: string) => {
+  const teacherProfile = await db.teacherProfile.findUnique({
+    where: { userId: teacherUserId },
+  });
+  if (!teacherProfile) {
+    // If no teacher profile found (e.g. admin viewing self without teacher role), return empty
+    const emptyGrouped = ALL_DAYS.reduce<Record<string, any[]>>((acc, day) => {
+      acc[day] = [];
+      return acc;
+    }, {});
+    return { grouped: emptyGrouped, slots: [] };
+  }
+
+  const slots = await db.timetableSlot.findMany({
+    where: {
+      subjectTeaching: { teacherProfileId: teacherProfile.id },
+      class: { schoolId },
+    },
+    include: {
+      class: { select: { id: true, name: true, academicYear: true } },
+      subjectTeaching: {
+        include: {
+          subject: { select: { id: true, name: true, code: true } },
+          teacherProfile: {
+            include: {
+              user: { select: { id: true, firstName: true, lastName: true, email: true } },
+            },
+          },
+        },
+      },
+    },
+    orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }],
+  });
+
+  const grouped = ALL_DAYS.reduce<Record<string, typeof slots>>((acc, day) => {
+    acc[day] = slots.filter((s) => s.dayOfWeek === day);
+    return acc;
+  }, {});
+
+  return {
+    grouped,
+    slots,
+  };
+};
+
+const listSchoolTeachers = async (schoolId: string) => {
+  const teachers = await db.teacherProfile.findMany({
+    where: { user: { schoolId, isActive: true } },
+    include: {
+      user: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          avatar: true,
+        },
+      },
+      subjectTeachings: {
+        include: {
+          subject: { select: { id: true, name: true, code: true } },
+          class: { select: { id: true, name: true } },
+        },
+      },
+    },
+    orderBy: { user: { firstName: "asc" } },
+  });
+
+  return teachers;
+};
+
+const getOrCreateSubjectTeaching = async (
+  schoolId: string,
+  classId: string,
+  subjectId: string,
+  teacherProfileId: string,
+  academicYear: string,
+) => {
+  const cls = await db.class.findFirst({
+    where: { id: classId, schoolId },
+  });
+  if (!cls) throw new AppError("Class not found in this school", 404);
+
+  return db.subjectTeaching.upsert({
+    where: {
+      classId_subjectId_academicYear: {
+        classId,
+        subjectId,
+        academicYear,
+      },
+    },
+    update: { teacherProfileId },
+    create: {
+      classId,
+      subjectId,
+      teacherProfileId,
+      academicYear,
+    },
+  });
+};
+
+const createSlot = async (
+  schoolId: string,
+  data: {
+    classId: string;
+    subjectTeachingId?: string;
+    subjectId?: string;
+    teacherProfileId?: string;
+    dayOfWeek: DayOfWeek;
+    startTime: string;
+    endTime: string;
+    room?: string;
+    academicYear?: string;
+  },
+) => {
+  const cls = await db.class.findFirst({
+    where: { id: data.classId, schoolId },
+  });
+  if (!cls) throw new AppError("Class not found", 404);
+
+  const academicYear = data.academicYear || cls.academicYear || "2024/2025";
+  let subjectTeachingId = data.subjectTeachingId;
+
+  if (!subjectTeachingId) {
+    if (!data.subjectId) {
+      throw new AppError("Subject is required to create a timetable slot", 400);
+    }
+
+    let teacherProfileId = data.teacherProfileId;
+    if (!teacherProfileId) {
+      // Find default teacher or first teacher
+      const firstTeacher = await db.teacherProfile.findFirst({
+        where: { user: { schoolId } },
+      });
+      if (!firstTeacher) {
+        throw new AppError("A teacher profile is required to assign this slot", 400);
+      }
+      teacherProfileId = firstTeacher.id;
+    }
+
+    const st = await getOrCreateSubjectTeaching(
+      schoolId,
+      data.classId,
+      data.subjectId,
+      teacherProfileId,
+      academicYear,
+    );
+    subjectTeachingId = st.id;
+  }
+
+  // Check for conflicts in same class + day + overlapping time
+  const existing = await db.timetableSlot.findMany({
+    where: {
+      classId: data.classId,
+      dayOfWeek: data.dayOfWeek,
+      academicYear,
+    },
+  });
+
+  for (const slot of existing) {
+    if (slot.startTime < data.endTime && slot.endTime > data.startTime) {
+      throw new AppError(
+        `Time conflict: Existing period ${slot.startTime}–${slot.endTime} overlaps with ${data.startTime}–${data.endTime}`,
+        409,
+      );
+    }
+  }
+
+  return db.timetableSlot.create({
+    data: {
+      classId: data.classId,
+      subjectTeachingId,
+      dayOfWeek: data.dayOfWeek,
+      startTime: data.startTime,
+      endTime: data.endTime,
+      room: data.room,
+      academicYear,
+    },
+    include: {
+      class: { select: { id: true, name: true } },
       subjectTeaching: {
         include: {
           subject: { select: { id: true, name: true, code: true } },
@@ -26,77 +242,92 @@ const getClassTimetable = async (classId: string, schoolId: string) => {
         },
       },
     },
-    orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }],
   });
-
-  // Group by day
-  const days = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"];
-  return days.reduce<Record<string, typeof slots>>((acc, day) => {
-    acc[day] = slots.filter((s) => s.dayOfWeek === day);
-    return acc;
-  }, {});
 };
 
-const getTeacherTimetable = async (teacherUserId: string, schoolId: string) => {
-  const teacherProfile = await db.teacherProfile.findUnique({
-    where: { userId: teacherUserId },
+const updateSlot = async (
+  id: string,
+  schoolId: string,
+  data: {
+    dayOfWeek?: DayOfWeek;
+    startTime?: string;
+    endTime?: string;
+    room?: string;
+    subjectId?: string;
+    teacherProfileId?: string;
+  },
+) => {
+  const slot = await db.timetableSlot.findFirst({
+    where: { id, class: { schoolId } },
+    include: { subjectTeaching: true, class: true },
   });
-  if (!teacherProfile) throw new AppError("Teacher profile not found", 404);
+  if (!slot) throw new AppError("Slot not found", 404);
 
-  const slots = await db.timetableSlot.findMany({
-    where: {
-      subjectTeaching: { teacherProfileId: teacherProfile.id },
-      class: { schoolId },
+  let subjectTeachingId = slot.subjectTeachingId;
+  const academicYear = slot.academicYear || slot.class.academicYear;
+
+  if (data.subjectId || data.teacherProfileId) {
+    const targetSubjectId = data.subjectId || slot.subjectTeaching.subjectId;
+    const targetTeacherId =
+      data.teacherProfileId || slot.subjectTeaching.teacherProfileId;
+
+    const st = await getOrCreateSubjectTeaching(
+      schoolId,
+      slot.classId,
+      targetSubjectId,
+      targetTeacherId,
+      academicYear,
+    );
+    subjectTeachingId = st.id;
+  }
+
+  const newDay = data.dayOfWeek || slot.dayOfWeek;
+  const newStart = data.startTime || slot.startTime;
+  const newEnd = data.endTime || slot.endTime;
+
+  // Conflict check if time or day changed
+  if (data.startTime || data.endTime || data.dayOfWeek) {
+    const existing = await db.timetableSlot.findMany({
+      where: {
+        classId: slot.classId,
+        dayOfWeek: newDay,
+        academicYear,
+        NOT: { id: slot.id },
+      },
+    });
+
+    for (const s of existing) {
+      if (s.startTime < newEnd && s.endTime > newStart) {
+        throw new AppError(
+          `Time conflict: Existing period ${s.startTime}–${s.endTime} overlaps with ${newStart}–${newEnd}`,
+          409,
+        );
+      }
+    }
+  }
+
+  return db.timetableSlot.update({
+    where: { id },
+    data: {
+      subjectTeachingId,
+      dayOfWeek: newDay,
+      startTime: newStart,
+      endTime: newEnd,
+      room: data.room !== undefined ? data.room : slot.room,
     },
     include: {
       class: { select: { id: true, name: true } },
       subjectTeaching: {
-        include: { subject: { select: { name: true, code: true } } },
+        include: {
+          subject: { select: { id: true, name: true, code: true } },
+          teacherProfile: {
+            include: {
+              user: { select: { id: true, firstName: true, lastName: true } },
+            },
+          },
+        },
       },
     },
-    orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }],
-  });
-
-  const days = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"];
-  return days.reduce<Record<string, typeof slots>>((acc, day) => {
-    acc[day] = slots.filter((s) => s.dayOfWeek === day);
-    return acc;
-  }, {});
-};
-
-const createSlot = async (
-  schoolId: string,
-  data: {
-    classId: string;
-    subjectTeachingId: string;
-    dayOfWeek: DayOfWeek;
-    startTime: string;
-    endTime: string;
-    room?: string;
-    academicYear: string;
-  },
-) => {
-  // Check for conflicts in same class + day + overlapping time
-  const existing = await db.timetableSlot.findMany({
-    where: {
-      classId: data.classId,
-      dayOfWeek: data.dayOfWeek,
-      academicYear: data.academicYear,
-    },
-  });
-
-  for (const slot of existing) {
-    if (slot.startTime < data.endTime && slot.endTime > data.startTime) {
-      throw new AppError(
-        `Time conflict detected: existing slot ${slot.startTime}-${slot.endTime}`,
-        409,
-      );
-    }
-  }
-
-  return db.timetableSlot.create({
-    data,
-    include: { subjectTeaching: { include: { subject: true } } },
   });
 };
 
@@ -108,36 +339,17 @@ const deleteSlot = async (id: string, schoolId: string) => {
   await db.timetableSlot.delete({ where: { id } });
 };
 
-const assignSubjectTeaching = async (
-  schoolId: string,
-  data: {
-    classId: string;
-    subjectId: string;
-    teacherProfileId: string;
-    academicYear: string;
-  },
-) => {
+const clearClassTimetable = async (classId: string, schoolId: string) => {
   const cls = await db.class.findFirst({
-    where: { id: data.classId, schoolId },
+    where: { id: classId, schoolId },
   });
   if (!cls) throw new AppError("Class not found", 404);
-  return db.subjectTeaching.upsert({
-    where: {
-      classId_subjectId_academicYear: {
-        classId: data.classId,
-        subjectId: data.subjectId,
-        academicYear: data.academicYear,
-      },
-    },
-    update: { teacherProfileId: data.teacherProfileId },
-    create: data,
-    include: {
-      subject: { select: { name: true } },
-      teacherProfile: {
-        include: { user: { select: { firstName: true, lastName: true } } },
-      },
-    },
+
+  const deleted = await db.timetableSlot.deleteMany({
+    where: { classId },
   });
+
+  return { count: deleted.count };
 };
 
 // ════════════════════════════════════════════════════════════
@@ -147,6 +359,20 @@ const router = Router();
 const isAdmin = [Role.ADMIN, Role.SUPER_ADMIN];
 const isStaff = [Role.ADMIN, Role.SUPER_ADMIN, Role.TEACHER];
 
+// ── Teacher list for assignment ──────────────────────────────
+router.get(
+  "/teachers",
+  authorize(...isStaff),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      sendSuccess(res, await listSchoolTeachers(req.user.schoolId));
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// ── Class Timetable ──────────────────────────────────────────
 router.get(
   "/class/:classId",
   async (req: Request, res: Response, next: NextFunction) => {
@@ -161,6 +387,7 @@ router.get(
   },
 );
 
+// ── Teacher Timetable (Own) ──────────────────────────────────
 router.get(
   "/teacher",
   authorize(...isStaff),
@@ -176,9 +403,10 @@ router.get(
   },
 );
 
+// ── Teacher Timetable by Teacher User ID ─────────────────────
 router.get(
   "/teacher/:teacherId",
-  authorize(...isAdmin),
+  authorize(...isStaff),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       sendSuccess(
@@ -191,6 +419,7 @@ router.get(
   },
 );
 
+// ── Create Timetable Slot ────────────────────────────────────
 router.post(
   "/slots",
   authorize(...isAdmin),
@@ -199,12 +428,14 @@ router.post(
       const data = z
         .object({
           classId: z.string(),
-          subjectTeachingId: z.string(),
+          subjectTeachingId: z.string().optional(),
+          subjectId: z.string().optional(),
+          teacherProfileId: z.string().optional(),
           dayOfWeek: z.nativeEnum(DayOfWeek),
           startTime: z.string(),
           endTime: z.string(),
           room: z.string().optional(),
-          academicYear: z.string(),
+          academicYear: z.string().optional(),
         })
         .parse(req.body);
       sendCreated(res, await createSlot(req.user.schoolId, data));
@@ -214,6 +445,34 @@ router.post(
   },
 );
 
+// ── Update Timetable Slot ────────────────────────────────────
+router.patch(
+  "/slots/:id",
+  authorize(...isAdmin),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const data = z
+        .object({
+          dayOfWeek: z.nativeEnum(DayOfWeek).optional(),
+          startTime: z.string().optional(),
+          endTime: z.string().optional(),
+          room: z.string().optional(),
+          subjectId: z.string().optional(),
+          teacherProfileId: z.string().optional(),
+        })
+        .parse(req.body);
+      sendSuccess(
+        res,
+        await updateSlot(req.params.id, req.user.schoolId, data),
+        "Slot updated",
+      );
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// ── Delete Timetable Slot ────────────────────────────────────
 router.delete(
   "/slots/:id",
   authorize(...isAdmin),
@@ -227,6 +486,24 @@ router.delete(
   },
 );
 
+// ── Clear All Slots for a Class ──────────────────────────────
+router.delete(
+  "/class/:classId/clear",
+  authorize(...isAdmin),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      sendSuccess(
+        res,
+        await clearClassTimetable(req.params.classId, req.user.schoolId),
+        "Class timetable cleared",
+      );
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// ── Assign Subject Teaching ──────────────────────────────────
 router.post(
   "/assign-teaching",
   authorize(...isAdmin),
@@ -242,7 +519,13 @@ router.post(
         .parse(req.body);
       sendCreated(
         res,
-        await assignSubjectTeaching(req.user.schoolId, data),
+        await getOrCreateSubjectTeaching(
+          req.user.schoolId,
+          data.classId,
+          data.subjectId,
+          data.teacherProfileId,
+          data.academicYear,
+        ),
         "Teaching assigned",
       );
     } catch (e) {
@@ -252,3 +535,4 @@ router.post(
 );
 
 export default router;
+

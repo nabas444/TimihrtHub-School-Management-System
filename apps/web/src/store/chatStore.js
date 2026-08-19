@@ -12,19 +12,47 @@ export const useChatStore = create((set, get) => ({
   setActiveRoom: (roomId) => set({ activeRoomId: roomId }),
 
   addMessage: (roomId, message) =>
-    set((state) => ({
-      messages: {
-        ...state.messages,
-        [roomId]: [...(state.messages[roomId] ?? []), message],
-      },
-      // Update last message in room list
-      rooms: state.rooms.map((r) =>
-        r.roomId === roomId ? { ...r, room: { ...r.room, messages: [message] } } : r,
-      ),
-    })),
+    set((state) => {
+      const existing = state.messages[roomId] ?? [];
+      const alreadyExists = existing.some((m) => m.id === message.id);
+      const newMessages = alreadyExists
+        ? existing.map((m) => (m.id === message.id ? { ...m, ...message } : m))
+        : [...existing, message];
+
+      return {
+        messages: {
+          ...state.messages,
+          [roomId]: newMessages,
+        },
+        // Update last message in room list
+        rooms: state.rooms.map((r) =>
+          r.roomId === roomId ? { ...r, room: { ...r.room, messages: [message] } } : r,
+        ),
+      };
+    }),
 
   setMessages: (roomId, messages) =>
     set((state) => ({ messages: { ...state.messages, [roomId]: messages } })),
+
+  updateMessage: (roomId, updatedMessage) =>
+    set((state) => ({
+      messages: {
+        ...state.messages,
+        [roomId]: (state.messages[roomId] ?? []).map((m) =>
+          m.id === updatedMessage.id ? { ...m, ...updatedMessage } : m,
+        ),
+      },
+    })),
+
+  deleteMessage: (roomId, messageId) =>
+    set((state) => ({
+      messages: {
+        ...state.messages,
+        [roomId]: (state.messages[roomId] ?? []).map((m) =>
+          m.id === messageId ? { ...m, isDeleted: true, content: 'This message was deleted' } : m,
+        ),
+      },
+    })),
 
   appendMessages: (roomId, messages) =>
     set((state) => ({
