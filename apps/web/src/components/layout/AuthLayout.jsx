@@ -1,6 +1,7 @@
 import { Link, Outlet, Navigate } from "react-router-dom";
 import { useAuthStore } from "../../store/authStore";
 import { GraduationCap } from "lucide-react";
+import logoImg from "../../assets/logo.png";
 
 export default function AuthLayout() {
   const { isAuthenticated } = useAuthStore();
@@ -12,12 +13,13 @@ export default function AuthLayout() {
         {/* Brand */}
         <div className="text-center mb-8">
           <Link to="/" className="inline-block">
-            <div className="w-14 h-14 bg-primary-600 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-lg">
-              <GraduationCap className="w-8 h-8 text-white" />
-            </div>
-            <h1 className="text-2xl font-bold text-gray-900">TimhirtHub</h1>
+            <img
+              src={logoImg}
+              alt="TimhirtHub"
+              className="h-20 sm:h-24 w-auto mx-auto mb-3 object-contain"
+            />
             <p className="text-gray-500 text-sm mt-1">
-              TimhirtHub — School Management Platform
+              School Management Platform
             </p>
           </Link>
         </div>

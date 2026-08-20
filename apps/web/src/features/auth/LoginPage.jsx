@@ -121,17 +121,6 @@ export default function LoginPage() {
           {t("auth.register_here")}
         </Link>
       </p>
-
-      {/* Demo hint */}
-      <div className="mt-4 p-3 bg-primary-50 rounded-xl text-xs text-primary-700 space-y-1">
-        <p className="font-semibold">Demo credentials:</p>
-        <p>Admin: admin@demoschool.edu</p>
-        <p>Teacher: teacher@demoschool.edu</p>
-        <p>Student: student@demoschool.edu</p>
-        <p>Parent: parent@demoschool.edu</p>
-        <p>Finance: finance@demoschool.edu</p>
-        <p className="text-primary-500">Password: password123</p>
-      </div>
     </div>
   );
 }

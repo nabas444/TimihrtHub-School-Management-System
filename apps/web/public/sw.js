@@ -27,6 +27,7 @@ const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 const APP_SHELL_URLS = [
   '/',
   '/manifest.json',
+  '/logo.png',
   '/favicon.svg',
   '/icon-192.png',
   '/icon-512.png',

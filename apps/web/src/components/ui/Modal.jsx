@@ -2,18 +2,19 @@ import { useEffect } from 'react';
 import { X } from 'lucide-react';
 import clsx from 'clsx';
 
-export default function Modal({ open, onClose, title, children, size = 'md', footer }) {
+export default function Modal({ open, isOpen, onClose, title, children, size = 'md', footer }) {
+  const isVisible = Boolean(open ?? isOpen);
   const sizes = { sm: 'max-w-md', md: 'max-w-lg', lg: 'max-w-2xl', xl: 'max-w-4xl' };
 
   useEffect(() => {
-    if (!open) return;
+    if (!isVisible) return;
     const handler = (e) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', handler);
     document.body.style.overflow = 'hidden';
     return () => { document.removeEventListener('keydown', handler); document.body.style.overflow = ''; };
-  }, [open, onClose]);
+  }, [isVisible, onClose]);
 
-  if (!open) return null;
+  if (!isVisible) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">

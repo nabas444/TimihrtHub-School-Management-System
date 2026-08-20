@@ -9,6 +9,7 @@ import {
 import AppLayout from "../components/layout/AppLayout";
 import AuthLayout from "../components/layout/AuthLayout";
 import PageLoader from "../components/ui/PageLoader";
+import { useAuthStore } from "../store/authStore";
 
 const S = ({ children }) => (
   <Suspense fallback={<PageLoader />}>{children}</Suspense>
@@ -39,11 +40,29 @@ const AssignmentDetailPage = lazy(
   () => import("../features/academics/AssignmentDetailPage"),
 );
 const ExamsPage = lazy(() => import("../features/academics/ExamsPage"));
-const GradesPage = lazy(() => import("../features/academics/GradesPage"));
+const SubjectRosterPage = lazy(
+  () => import("../features/academics/SubjectRosterPage"),
+);
+const MasterRosterPage = lazy(
+  () => import("../features/academics/MasterRosterPage"),
+);
+const MyGradesPage = lazy(() => import("../features/academics/MyGradesPage"));
 const SubjectsPage = lazy(() => import("../features/academics/SubjectsPage"));
 const ClassesPage = lazy(() => import("../features/academics/ClassesPage"));
-const AttendancePage = lazy(
-  () => import("../features/attendance/AttendancePage"),
+const StaffDailyAttendancePage = lazy(
+  () => import("../features/attendance/StaffDailyAttendancePage"),
+);
+const StaffAttendanceAnalyticsPage = lazy(
+  () => import("../features/attendance/StaffAttendanceAnalyticsPage"),
+);
+const AttendancePenaltiesPage = lazy(
+  () => import("../features/attendance/AttendancePenaltiesPage"),
+);
+const StudentAttendanceReportsPage = lazy(
+  () => import("../features/attendance/StudentAttendanceReportsPage"),
+);
+const MyAttendancePage = lazy(
+  () => import("../features/attendance/MyAttendancePage"),
 );
 const AttendanceMarkPage = lazy(
   () => import("../features/attendance/AttendanceMarkPage"),
@@ -57,9 +76,52 @@ const AnnouncementsPage = lazy(
 const MeetingsPage = lazy(() => import("../features/meetings/MeetingsPage"));
 const FeesPage = lazy(() => import("../features/fees/FeesPage"));
 const LibraryPage = lazy(() => import("../features/library/LibraryPage"));
-const ClubsPage = lazy(() => import("../features/clubs/ClubsPage"));
+const ClubDirectoryPage = lazy(
+  () => import("../features/clubs/ClubDirectoryPage"),
+);
+const MyClubsPage = lazy(() => import("../features/clubs/MyClubsPage"));
+const ClubCalendarPage = lazy(
+  () => import("../features/clubs/ClubCalendarPage"),
+);
+const PendingClubApprovalsPage = lazy(
+  () => import("../features/clubs/PendingClubApprovalsPage"),
+);
+const ClubRenewalsPage = lazy(
+  () => import("../features/clubs/ClubRenewalsPage"),
+);
 const ClubDetailPage = lazy(() => import("../features/clubs/ClubDetailPage"));
 const FilesPage = lazy(() => import("../features/files/FilesPage"));
+const IdCardsPage = lazy(() => import("../features/id-cards/IdCardsPage"));
+const ReportCardsPage = lazy(
+  () => import("../features/report-cards/ReportCardsPage"),
+);
+const CertificatesPage = lazy(
+  () => import("../features/certificates/CertificatesPage"),
+);
+const MyCertificatesPage = lazy(
+  () => import("../features/certificates/MyCertificatesPage"),
+);
+const AnnualPlansPage = lazy(
+  () => import("../features/annual-plans/AnnualPlansPage"),
+);
+const AnnualPlanEditorPage = lazy(
+  () => import("../features/annual-plans/AnnualPlanEditorPage"),
+);
+const SupportProgramsPage = lazy(
+  () => import("../features/student-support/SupportProgramsPage"),
+);
+const SupportEnrollmentsPage = lazy(
+  () => import("../features/student-support/SupportEnrollmentsPage"),
+);
+const MyStudentSupportPage = lazy(
+  () => import("../features/student-support/MyStudentSupportPage"),
+);
+const TutorialSessionsPage = lazy(
+  () => import("../features/tutorials/TutorialSessionsPage"),
+);
+const StudentTutorialsPage = lazy(
+  () => import("../features/tutorials/StudentTutorialsPage"),
+);
 const StaffPage = lazy(() => import("../features/staff/StaffPage"));
 const LeavePage = lazy(() => import("../features/staff/LeavePage"));
 const AIInsightsPage = lazy(() => import("../features/ai/AIInsightsPage"));
@@ -76,6 +138,29 @@ const UnauthorizedPage = lazy(() =>
     default: m.UnauthorizedPage,
   })),
 );
+
+function AttendanceRedirect() {
+  const { user } = useAuthStore();
+  if (user?.role === "ADMIN") return <Navigate to="/attendance/staff-daily" replace />;
+  if (user?.role === "TEACHER") return <Navigate to="/attendance/mark" replace />;
+  return <Navigate to="/attendance/my" replace />;
+}
+
+function GradesRedirect() {
+  const { user } = useAuthStore();
+  if (user?.role === "ADMIN" || user?.role === "TEACHER") {
+    return <Navigate to="/grades/roster" replace />;
+  }
+  return <Navigate to="/grades/mine" replace />;
+}
+
+function TutorialsRedirect() {
+  const { user } = useAuthStore();
+  if (user?.role === "ADMIN" || user?.role === "TEACHER") {
+    return <TutorialSessionsPage />;
+  }
+  return <StudentTutorialsPage />;
+}
 
 function RootLanding() {
   return <LandingPage />;
@@ -218,9 +303,33 @@ export const router = createBrowserRouter([
       },
       {
         path: "/grades",
+        element: <GradesRedirect />,
+      },
+      {
+        path: "/grades/roster",
         element: (
           <S>
-            <GradesPage />
+            <StaffRoute>
+              <SubjectRosterPage />
+            </StaffRoute>
+          </S>
+        ),
+      },
+      {
+        path: "/grades/master",
+        element: (
+          <S>
+            <StaffRoute>
+              <MasterRosterPage />
+            </StaffRoute>
+          </S>
+        ),
+      },
+      {
+        path: "/grades/mine",
+        element: (
+          <S>
+            <MyGradesPage />
           </S>
         ),
       },
@@ -246,9 +355,45 @@ export const router = createBrowserRouter([
       },
       {
         path: "/attendance",
+        element: <AttendanceRedirect />,
+      },
+      {
+        path: "/attendance/staff-daily",
         element: (
           <S>
-            <AttendancePage />
+            <AdminRoute>
+              <StaffDailyAttendancePage />
+            </AdminRoute>
+          </S>
+        ),
+      },
+      {
+        path: "/attendance/staff-analytics",
+        element: (
+          <S>
+            <AdminRoute>
+              <StaffAttendanceAnalyticsPage />
+            </AdminRoute>
+          </S>
+        ),
+      },
+      {
+        path: "/attendance/penalties",
+        element: (
+          <S>
+            <AdminRoute>
+              <AttendancePenaltiesPage />
+            </AdminRoute>
+          </S>
+        ),
+      },
+      {
+        path: "/attendance/student-reports",
+        element: (
+          <S>
+            <StaffRoute>
+              <StudentAttendanceReportsPage />
+            </StaffRoute>
           </S>
         ),
       },
@@ -259,6 +404,14 @@ export const router = createBrowserRouter([
             <StaffRoute>
               <AttendanceMarkPage />
             </StaffRoute>
+          </S>
+        ),
+      },
+      {
+        path: "/attendance/my",
+        element: (
+          <S>
+            <MyAttendancePage />
           </S>
         ),
       },
@@ -328,9 +481,49 @@ export const router = createBrowserRouter([
       },
       {
         path: "/clubs",
+        element: <Navigate to="/clubs/directory" replace />,
+      },
+      {
+        path: "/clubs/directory",
         element: (
           <S>
-            <ClubsPage />
+            <ClubDirectoryPage />
+          </S>
+        ),
+      },
+      {
+        path: "/clubs/mine",
+        element: (
+          <S>
+            <MyClubsPage />
+          </S>
+        ),
+      },
+      {
+        path: "/clubs/calendar",
+        element: (
+          <S>
+            <ClubCalendarPage />
+          </S>
+        ),
+      },
+      {
+        path: "/clubs/pending",
+        element: (
+          <S>
+            <AdminRoute>
+              <PendingClubApprovalsPage />
+            </AdminRoute>
+          </S>
+        ),
+      },
+      {
+        path: "/clubs/renewals",
+        element: (
+          <S>
+            <AdminRoute>
+              <ClubRenewalsPage />
+            </AdminRoute>
           </S>
         ),
       },
@@ -347,6 +540,100 @@ export const router = createBrowserRouter([
         element: (
           <S>
             <FilesPage />
+          </S>
+        ),
+      },
+      {
+        path: "/id-cards",
+        element: (
+          <S>
+            <AdminRoute>
+              <IdCardsPage />
+            </AdminRoute>
+          </S>
+        ),
+      },
+      {
+        path: "/report-cards",
+        element: (
+          <S>
+            <StaffRoute>
+              <ReportCardsPage />
+            </StaffRoute>
+          </S>
+        ),
+      },
+      {
+        path: "/certificates",
+        element: (
+          <S>
+            <StaffRoute>
+              <CertificatesPage />
+            </StaffRoute>
+          </S>
+        ),
+      },
+      {
+        path: "/certificates/mine",
+        element: (
+          <S>
+            <MyCertificatesPage />
+          </S>
+        ),
+      },
+      {
+        path: "/annual-plans",
+        element: (
+          <S>
+            <StaffRoute>
+              <AnnualPlansPage />
+            </StaffRoute>
+          </S>
+        ),
+      },
+      {
+        path: "/annual-plans/:id",
+        element: (
+          <S>
+            <StaffRoute>
+              <AnnualPlanEditorPage />
+            </StaffRoute>
+          </S>
+        ),
+      },
+      {
+        path: "/student-support",
+        element: (
+          <S>
+            <AdminRoute>
+              <SupportProgramsPage />
+            </AdminRoute>
+          </S>
+        ),
+      },
+      {
+        path: "/student-support/enrollments",
+        element: (
+          <S>
+            <AdminRoute>
+              <SupportEnrollmentsPage />
+            </AdminRoute>
+          </S>
+        ),
+      },
+      {
+        path: "/student-support/my-support",
+        element: (
+          <S>
+            <MyStudentSupportPage />
+          </S>
+        ),
+      },
+      {
+        path: "/tutorials",
+        element: (
+          <S>
+            <TutorialsRedirect />
           </S>
         ),
       },

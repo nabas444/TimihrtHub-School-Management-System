@@ -19,15 +19,24 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
     const skip = (page - 1) * limit;
     const search = req.query.search as string | undefined;
     const category = req.query.category as string | undefined;
+    const tag = req.query.tag as string | undefined;
+    const language = req.query.language as string | undefined;
+    const condition = req.query.condition as string | undefined;
 
-    const where = {
+    const where: any = {
       schoolId: req.user.schoolId,
       ...(category && { category }),
+      ...(language && { language: { equals: language, mode: "insensitive" } }),
+      ...(condition && { condition: { equals: condition, mode: "insensitive" } }),
+      ...(tag && { tags: { has: tag } }),
       ...(search && {
         OR: [
           { title: { contains: search, mode: "insensitive" as const } },
           { author: { contains: search, mode: "insensitive" as const } },
           { isbn: { contains: search, mode: "insensitive" as const } },
+          { barcodeNumber: { contains: search, mode: "insensitive" as const } },
+          { publisher: { contains: search, mode: "insensitive" as const } },
+          { description: { contains: search, mode: "insensitive" as const } },
         ],
       }),
     };
@@ -56,21 +65,87 @@ router.post(
     try {
       const data = z
         .object({
-          title: z.string(),
-          author: z.string(),
+          title: z.string().min(1, "Title is required"),
+          author: z.string().min(1, "Author is required"),
           isbn: z.string().optional(),
-          category: z.string(),
+          edition: z.string().optional(),
+          language: z.string().optional(),
+          description: z.string().optional(),
+          category: z.string().min(1, "Category is required"),
+          tags: z.array(z.string()).default([]),
           publisher: z.string().optional(),
           year: z.number().optional(),
           copies: z.number().int().positive().default(1),
+          condition: z.string().optional(),
+          acquisitionSource: z.string().optional(),
+          price: z.number().optional(),
+          digitalCopyUrl: z.string().optional(),
+          barcodeNumber: z.string().optional(),
           coverUrl: z.string().optional(),
           location: z.string().optional(),
         })
         .parse(req.body);
+
       const book = await db.libraryBook.create({
         data: { schoolId: req.user.schoolId, ...data, available: data.copies },
       });
       sendCreated(res, book);
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// ── Update book ───────────────────────────────────────────────────────────────
+router.put(
+  "/:bookId",
+  authorize(...isAdmin),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const existing = await db.libraryBook.findFirst({
+        where: { id: req.params.bookId, schoolId: req.user.schoolId },
+      });
+      if (!existing) throw new AppError("Book not found", 404);
+
+      const data = z
+        .object({
+          title: z.string().min(1).optional(),
+          author: z.string().min(1).optional(),
+          isbn: z.string().optional(),
+          edition: z.string().optional(),
+          language: z.string().optional(),
+          description: z.string().optional(),
+          category: z.string().min(1).optional(),
+          tags: z.array(z.string()).optional(),
+          publisher: z.string().optional(),
+          year: z.number().optional(),
+          copies: z.number().int().positive().optional(),
+          condition: z.string().optional(),
+          acquisitionSource: z.string().optional(),
+          price: z.number().optional(),
+          digitalCopyUrl: z.string().optional(),
+          barcodeNumber: z.string().optional(),
+          coverUrl: z.string().optional(),
+          location: z.string().optional(),
+        })
+        .parse(req.body);
+
+      // Adjust available copies if total copies changed
+      let newAvailable = existing.available;
+      if (data.copies !== undefined && data.copies !== existing.copies) {
+        const diff = data.copies - existing.copies;
+        newAvailable = Math.max(0, existing.available + diff);
+      }
+
+      const updated = await db.libraryBook.update({
+        where: { id: existing.id },
+        data: {
+          ...data,
+          available: newAvailable,
+        },
+      });
+
+      sendSuccess(res, updated, "Book updated successfully");
     } catch (e) {
       next(e);
     }

@@ -1,4 +1,4 @@
-import { Role, NotificationType } from "@prisma/client";
+import { Role, NotificationType, ProgramType } from "@prisma/client";
 import { db } from "../../config/database";
 import { AppError } from "../../middleware/errorHandler";
 import { emitToUser, emitToSchool } from "../../config/socket";
@@ -1294,9 +1294,17 @@ export const getMarkSheetPdf = async (examId: string, schoolId: string) => {
 };
 
 // ── Subjects/Classes management ──────────────────────────────────────────────
-export const listClasses = async (schoolId: string) =>
-  db.class.findMany({
-    where: { schoolId },
+export const listClasses = async (
+  schoolId: string,
+  params?: { programType?: ProgramType },
+) => {
+  const where: any = { schoolId };
+  if (params?.programType && (params.programType as any) !== "ALL") {
+    where.programType = params.programType;
+  }
+
+  return db.class.findMany({
+    where,
     include: {
       gradeLevel: { select: { name: true } },
       classTeacher: {
@@ -1306,6 +1314,7 @@ export const listClasses = async (schoolId: string) =>
     },
     orderBy: [{ gradeLevel: { level: "asc" } }, { name: "asc" }],
   });
+};
 
 export const createClass = async (
   schoolId: string,
@@ -1315,6 +1324,8 @@ export const createClass = async (
     academicYear: string;
     capacity?: number;
     room?: string;
+    programType?: ProgramType;
+    programTypeLabel?: string | null;
   },
 ) => {
   if (!data.gradeLevelId?.trim()) {
@@ -1400,6 +1411,8 @@ export const updateClass = async (
     academicYear?: string;
     capacity?: number;
     room?: string;
+    programType?: ProgramType;
+    programTypeLabel?: string | null;
   },
 ) => {
   const klass = await db.class.findFirst({ where: { id: classId, schoolId } });

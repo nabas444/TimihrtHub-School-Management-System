@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { z } from "zod";
+import { ProgramType } from "@prisma/client";
 import * as AcademicsService from "./academics.service";
 import { sendSuccess, sendCreated, paginationMeta } from "../../utils/response";
 import { AppError } from "../../middleware/errorHandler";
@@ -89,7 +90,11 @@ export const listClasses = async (
   next: NextFunction,
 ) => {
   try {
-    sendSuccess(res, await AcademicsService.listClasses(req.user.schoolId));
+    const programType = req.query.programType as ProgramType | undefined;
+    sendSuccess(
+      res,
+      await AcademicsService.listClasses(req.user.schoolId, { programType })
+    );
   } catch (e) {
     next(e);
   }
@@ -107,6 +112,8 @@ export const createClass = async (
         academicYear: z.string(),
         capacity: z.number().optional(),
         room: z.string().optional(),
+        programType: z.nativeEnum(ProgramType).optional(),
+        programTypeLabel: z.string().optional().nullable(),
       })
       .parse(req.body);
     sendCreated(
@@ -147,6 +154,8 @@ export const updateClass = async (
         academicYear: z.string().optional(),
         capacity: z.number().optional(),
         room: z.string().optional(),
+        programType: z.nativeEnum(ProgramType).optional(),
+        programTypeLabel: z.string().optional().nullable(),
       })
       .parse(req.body);
 

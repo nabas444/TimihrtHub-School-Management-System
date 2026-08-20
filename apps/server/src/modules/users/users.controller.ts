@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { z } from "zod";
-import { Role, Gender } from "@prisma/client";
+import { Role, Gender, StudentStatus, ProgramType } from "@prisma/client";
 import { db } from "../../config/database";
 import { AppError } from "../../middleware/errorHandler";
 import * as UsersService from "./users.service";
@@ -16,45 +16,135 @@ const CreateUserSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
   firstName: z.string().min(1).max(50),
+  middleName: z.string().max(50).nullable().optional(),
   lastName: z.string().min(1).max(50),
-  phone: z.string().optional(),
+  phone: z.string().nullable().optional(),
   gender: z.nativeEnum(Gender).optional(),
   dateOfBirth: z.string().datetime().optional(),
-  address: z.string().optional(),
-  // Student
-  admissionNumber: z.string().optional(),
-  rollNumber: z.string().optional(),
-  classId: z.string().optional(),
+  address: z.string().nullable().optional(),
+  nationality: z.string().nullable().optional(),
+  city: z.string().nullable().optional(),
+  state: z.string().nullable().optional(),
+  pincode: z.string().nullable().optional(),
+  birthPlace: z.string().nullable().optional(),
+  emergencyContact: z.string().nullable().optional(),
+  emergencyPhone: z.string().nullable().optional(),
+
+  // Student specific
+  admissionNumber: z.string().nullable().optional(),
+  rollNumber: z.string().nullable().optional(),
+  classId: z.string().nullable().optional(),
   classIds: z.array(z.string()).optional(),
-  gradeLevelId: z.string().optional(),
-  // Teacher
-  employeeId: z.string().optional(),
-  qualification: z.string().optional(),
-  specialization: z.string().optional(),
-  // Parent
-  occupation: z.string().optional(),
-  relation: z.string().optional(),
+  gradeLevelId: z.string().nullable().optional(),
+  busRouteId: z.string().nullable().optional(),
+  usesTransport: z.boolean().nullable().optional(),
+  programType: z.nativeEnum(ProgramType).nullable().optional(),
+  programTypeLabel: z.string().nullable().optional(),
+  bloodGroup: z.string().nullable().optional(),
+  medicalNotes: z.string().nullable().optional(),
+  status: z.nativeEnum(StudentStatus).optional(),
+  fatherFirstName: z.string().nullable().optional(),
+  fatherMiddleName: z.string().nullable().optional(),
+  fatherLastName: z.string().nullable().optional(),
+  motherFirstName: z.string().nullable().optional(),
+  motherMiddleName: z.string().nullable().optional(),
+  motherLastName: z.string().nullable().optional(),
+  fatherMobile: z.string().nullable().optional(),
+  motherMobile: z.string().nullable().optional(),
+  landline: z.string().nullable().optional(),
+  religionId: z.string().nullable().optional(),
+  categoryId: z.string().nullable().optional(),
+  feeCategoryId: z.string().nullable().optional(),
+  sourceId: z.string().nullable().optional(),
+  houseId: z.string().nullable().optional(),
+  curriculumId: z.string().nullable().optional(),
+  previousSchoolId: z.string().nullable().optional(),
+  previousClassYear: z.string().nullable().optional(),
+  reference: z.string().nullable().optional(),
+
+  // Teacher specific
+  employeeId: z.string().nullable().optional(),
+  qualification: z.string().nullable().optional(),
+  specialization: z.string().nullable().optional(),
+  designation: z.string().nullable().optional(),
+  experienceYears: z.number().nullable().optional(),
+
+  // Parent specific
+  occupation: z.string().nullable().optional(),
+  relation: z.string().nullable().optional(),
+  annualIncome: z.string().nullable().optional(),
+  education: z.string().nullable().optional(),
   studentIds: z.array(z.string()).optional(),
-  // Admin
-  department: z.string().optional(),
+
+  // Admin specific
+  department: z.string().nullable().optional(),
 });
 
 const UpdateUserSchema = z.object({
   firstName: z.string().min(1).max(50).optional(),
+  middleName: z.string().max(50).nullable().optional(),
   lastName: z.string().min(1).max(50).optional(),
-  phone: z.string().optional(),
+  phone: z.string().nullable().optional(),
   gender: z.nativeEnum(Gender).optional(),
   dateOfBirth: z.string().datetime().optional(),
-  address: z.string().optional(),
+  address: z.string().nullable().optional(),
+  nationality: z.string().nullable().optional(),
+  city: z.string().nullable().optional(),
+  state: z.string().nullable().optional(),
+  pincode: z.string().nullable().optional(),
+  birthPlace: z.string().nullable().optional(),
+  emergencyContact: z.string().nullable().optional(),
+  emergencyPhone: z.string().nullable().optional(),
   avatar: z.string().url().nullable().optional(),
   isActive: z.boolean().optional(),
-  smsOptIn: z.boolean().optional(), // Phase 5 — parent SMS alert opt-in
-  rollNumber: z.string().optional(),
-  qualification: z.string().optional(),
-  specialization: z.string().optional(),
-  employeeId: z.string().optional(),
-  department: z.string().optional(),
-  occupation: z.string().optional(),
+  smsOptIn: z.boolean().optional(),
+
+  // Student specific
+  admissionNumber: z.string().nullable().optional(),
+  rollNumber: z.string().nullable().optional(),
+  classId: z.string().nullable().optional(),
+  gradeLevelId: z.string().nullable().optional(),
+  busRouteId: z.string().nullable().optional(),
+  usesTransport: z.boolean().nullable().optional(),
+  programType: z.nativeEnum(ProgramType).nullable().optional(),
+  programTypeLabel: z.string().nullable().optional(),
+  bloodGroup: z.string().nullable().optional(),
+  medicalNotes: z.string().nullable().optional(),
+  status: z.nativeEnum(StudentStatus).optional(),
+  fatherFirstName: z.string().nullable().optional(),
+  fatherMiddleName: z.string().nullable().optional(),
+  fatherLastName: z.string().nullable().optional(),
+  motherFirstName: z.string().nullable().optional(),
+  motherMiddleName: z.string().nullable().optional(),
+  motherLastName: z.string().nullable().optional(),
+  fatherMobile: z.string().nullable().optional(),
+  motherMobile: z.string().nullable().optional(),
+  landline: z.string().nullable().optional(),
+  religionId: z.string().nullable().optional(),
+  categoryId: z.string().nullable().optional(),
+  feeCategoryId: z.string().nullable().optional(),
+  sourceId: z.string().nullable().optional(),
+  houseId: z.string().nullable().optional(),
+  curriculumId: z.string().nullable().optional(),
+  previousSchoolId: z.string().nullable().optional(),
+  previousClassYear: z.string().nullable().optional(),
+  reference: z.string().nullable().optional(),
+
+  // Teacher specific
+  qualification: z.string().nullable().optional(),
+  specialization: z.string().nullable().optional(),
+  employeeId: z.string().nullable().optional(),
+  designation: z.string().nullable().optional(),
+  experienceYears: z.number().nullable().optional(),
+
+  // Parent specific
+  occupation: z.string().nullable().optional(),
+  relation: z.string().nullable().optional(),
+  annualIncome: z.string().nullable().optional(),
+  education: z.string().nullable().optional(),
+
+  // Admin specific
+  department: z.string().nullable().optional(),
 });
 
 export const listUsers = async (
@@ -72,6 +162,10 @@ export const listUsers = async (
     const gender = req.query.gender as Gender | undefined;
     const enrollmentStatus = req.query.enrollmentStatus as string | undefined;
     const sortBy = req.query.sortBy as string | undefined;
+    const status = req.query.status as string | undefined;
+    const usesTransport = req.query.usesTransport as string | undefined;
+    const busRouteId = req.query.busRouteId as string | undefined;
+    const programType = req.query.programType as ProgramType | undefined;
 
     const classIds = (req.query.classIds as string | undefined)
       ? (req.query.classIds as string).split(",").filter(Boolean)
@@ -87,12 +181,16 @@ export const listUsers = async (
       page,
       limit,
       isActive,
+      status,
       classIds,
       classId,
       gradeLevelId,
       gender,
       enrollmentStatus,
       sortBy,
+      usesTransport,
+      busRouteId,
+      programType,
     });
     sendSuccess(
       res,

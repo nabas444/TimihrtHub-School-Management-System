@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useParams, Link, useNavigate } from "react-router-dom";
+import { useParams, Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   Sparkles,
   ArrowLeft,
@@ -39,18 +39,30 @@ import { useTranslation } from "../../lib/i18n/I18nProvider";
 import PageLoader from "../../components/ui/PageLoader";
 import { Badge, Avatar, EmptyState } from "../../components/ui/index";
 import Modal from "../../components/ui/Modal";
-import { CLUB_CATEGORIES, STATUS_CONFIG } from "./ClubsPage";
+import { CLUB_CATEGORIES, STATUS_CONFIG } from "./clubConstants";
 import clsx from "clsx";
 import toast from "react-hot-toast";
 
 export default function ClubDetailPage() {
   const { id: clubId } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { t } = useTranslation();
   const { user, isAdmin, isTeacher, isStudent } = useAuthStore();
   const qc = useQueryClient();
 
-  const [activeTab, setActiveTab] = useState("OVERVIEW"); // OVERVIEW | MEMBERS | MEETINGS | EVENTS | ACTIVITIES | ANNOUNCEMENTS | DOCUMENTS | SETTINGS
+  const activeTab = searchParams.get("tab") || "OVERVIEW"; // OVERVIEW | MEMBERS | MEETINGS | EVENTS | ACTIVITIES | ANNOUNCEMENTS | DOCUMENTS | SETTINGS
+  const setActiveTab = (tab) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (tab === "OVERVIEW") {
+        next.delete("tab");
+      } else {
+        next.set("tab", tab);
+      }
+      return next;
+    });
+  };
 
   // Modals
   const [joinModalOpen, setJoinModalOpen] = useState(false);

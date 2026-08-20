@@ -36,6 +36,13 @@ import fileRoutes from "./modules/files/files.routes";
 import billingRoutes, { handleStripeWebhook } from "./modules/billing/billing.routes";
 import deadlineRoutes from "./modules/deadlines/deadlines.routes";
 import clubRoutes from "./modules/clubs/clubs.routes";
+import lookupRoutes from "./modules/lookup/lookup.routes";
+import idCardRoutes from "./modules/id-cards/id-cards.routes";
+import reportCardRoutes from "./modules/report-cards/report-cards.routes";
+import certificateRoutes from "./modules/certificates/certificates.routes";
+import annualPlanRoutes from "./modules/annual-plans/annual-plans.routes";
+import studentSupportRoutes from "./modules/student-support/student-support.routes";
+import tutorialRoutes from "./modules/tutorials/tutorials.routes";
 
 // ── Background job workers ───────────────────────────────────────────────────
 // Importing these starts their BullMQ Worker instances (side effect on import).
@@ -143,6 +150,14 @@ app.use("/api/v1/files", fileRoutes);
 app.use("/api/v1/billing", billingRoutes);
 app.use("/api/v1/deadlines", deadlineRoutes);
 app.use("/api/v1/clubs", clubRoutes);
+app.use("/api/v1/lookup-values", lookupRoutes);
+app.use("/api/v1/id-cards", idCardRoutes);
+app.use("/api/v1/academic-year-summaries", reportCardRoutes);
+app.use("/api/v1/report-cards", reportCardRoutes);
+app.use("/api/v1/certificates", certificateRoutes);
+app.use("/api/v1/annual-plans", annualPlanRoutes);
+app.use("/api/v1/student-support", studentSupportRoutes);
+app.use("/api/v1/tutorial-sessions", tutorialRoutes);
 
 // ── 404 + Error handlers ─────────────────────────────────────────────────────
 app.use(notFoundHandler);

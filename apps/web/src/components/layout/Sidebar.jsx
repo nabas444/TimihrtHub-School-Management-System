@@ -1,6 +1,7 @@
-import { useEffect } from "react";
-import { Link, NavLink, useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { Link, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import logoImg from "../../assets/logo.png";
 import api from "../../lib/api";
 import { useAuthStore } from "../../store/authStore";
 import { useUIStore } from "../../store/uiStore";
@@ -23,6 +24,7 @@ import {
   LogOut,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   CheckSquare,
   AlertTriangle,
   Clock,
@@ -30,6 +32,8 @@ import {
   CreditCard,
   GraduationCap,
   Sparkles,
+  Award,
+  HeartHandshake,
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -49,9 +53,27 @@ const NAV_CONFIG = {
         { to: "/subjects", icon: BookOpen, label: "nav.subjects" },
         { to: "/assignments", icon: ClipboardList, label: "nav.assignments" },
         { to: "/exams", icon: CheckSquare, label: "nav.exams" },
-        { to: "/grades", icon: BookOpen, label: "nav.grades" },
+        { to: "/tutorials", icon: GraduationCap, label: "nav.tutorials" },
+        {
+          icon: BookOpen,
+          label: "nav.grades",
+          children: [
+            { to: "/grades/roster", label: "nav.grades_roster" },
+            { to: "/grades/master", label: "nav.grades_master" },
+          ],
+        },
         { to: "/timetable", icon: Calendar, label: "nav.timetable" },
-        { to: "/attendance", icon: CalendarCheck, label: "nav.attendance" },
+        { to: "/annual-plans", icon: FileText, label: "nav.annual_plans" },
+        {
+          icon: CalendarCheck,
+          label: "nav.attendance",
+          children: [
+            { to: "/attendance/staff-daily", label: "nav.attendance_staff_daily" },
+            { to: "/attendance/staff-analytics", label: "nav.attendance_staff_analytics" },
+            { to: "/attendance/penalties", label: "nav.attendance_penalties" },
+            { to: "/attendance/student-reports", label: "nav.attendance_student_reports" },
+          ],
+        },
         { to: "/behaviour", icon: AlertTriangle, label: "nav.behaviour" },
       ],
     },
@@ -66,8 +88,35 @@ const NAV_CONFIG = {
     {
       section: "nav.section_management",
       items: [
-        { to: "/clubs", icon: Sparkles, label: "nav.clubs" },
+        {
+          icon: Sparkles,
+          label: "nav.clubs",
+          children: [
+            { to: "/clubs/directory", label: "nav.clubs_directory" },
+            { to: "/clubs/mine", label: "nav.clubs_mine" },
+            { to: "/clubs/calendar", label: "nav.clubs_calendar" },
+            { to: "/clubs/pending", label: "nav.clubs_pending" },
+            { to: "/clubs/renewals", label: "nav.clubs_renewals" },
+          ],
+        },
         { to: "/fees", icon: DollarSign, label: "nav.fees" },
+        {
+          icon: HeartHandshake,
+          label: "nav.student_support",
+          children: [
+            { to: "/student-support", label: "nav.support_programs" },
+            { to: "/student-support/enrollments", label: "nav.support_enrollments" },
+          ],
+        },
+        {
+          icon: Award,
+          label: "nav.documents",
+          children: [
+            { to: "/report-cards", label: "nav.report_cards" },
+            { to: "/certificates", label: "nav.certificates" },
+            { to: "/id-cards", label: "nav.id_cards" },
+          ],
+        },
         { to: "/library", icon: Library, label: "nav.library" },
         { to: "/staff", icon: UserCog, label: "nav.staff_hr" },
         { to: "/files", icon: FileText, label: "nav.files" },
@@ -97,10 +146,34 @@ const NAV_CONFIG = {
         { to: "/students", icon: GraduationCap, label: "nav.my_students" },
         { to: "/assignments", icon: ClipboardList, label: "nav.assignments" },
         { to: "/exams", icon: CheckSquare, label: "nav.exams" },
-        { to: "/grades", icon: BookOpen, label: "nav.grades" },
+        { to: "/tutorials", icon: GraduationCap, label: "nav.tutorials" },
+        {
+          icon: BookOpen,
+          label: "nav.grades",
+          children: [
+            { to: "/grades/roster", label: "nav.grades_roster" },
+            { to: "/grades/master", label: "nav.grades_master" },
+          ],
+        },
         { to: "/timetable", icon: Calendar, label: "nav.timetable" },
-        { to: "/attendance", icon: CalendarCheck, label: "nav.attendance" },
+        { to: "/annual-plans", icon: FileText, label: "nav.annual_plans" },
+        {
+          icon: CalendarCheck,
+          label: "nav.attendance",
+          children: [
+            { to: "/attendance/mark", label: "nav.attendance_mark" },
+            { to: "/attendance/student-reports", label: "nav.attendance_student_reports" },
+          ],
+        },
         { to: "/behaviour", icon: AlertTriangle, label: "nav.behaviour" },
+        {
+          icon: Award,
+          label: "nav.documents",
+          children: [
+            { to: "/report-cards", label: "nav.report_cards" },
+            { to: "/certificates", label: "nav.certificates" },
+          ],
+        },
       ],
     },
     {
@@ -114,7 +187,16 @@ const NAV_CONFIG = {
     {
       section: "nav.section_resources",
       items: [
-        { to: "/clubs", icon: Sparkles, label: "nav.clubs" },
+        {
+          icon: Sparkles,
+          label: "nav.clubs",
+          children: [
+            { to: "/clubs/directory", label: "nav.clubs_directory" },
+            { to: "/clubs/mine", label: "nav.clubs_mine" },
+            { to: "/clubs/calendar", label: "nav.clubs_calendar" },
+          ],
+        },
+        { to: "/certificates/mine", icon: Award, label: "nav.my_certificates" },
         { to: "/files", icon: FileText, label: "nav.files" },
         { to: "/library", icon: Library, label: "nav.library" },
         {
@@ -143,6 +225,14 @@ const NAV_CONFIG = {
       section: "nav.section_finance",
       items: [
         { to: "/fees", icon: DollarSign, label: "nav.fees" },
+        {
+          icon: HeartHandshake,
+          label: "nav.student_support",
+          children: [
+            { to: "/student-support", label: "nav.support_programs" },
+            { to: "/student-support/enrollments", label: "nav.support_enrollments" },
+          ],
+        },
         { to: "/settings/billing", icon: CreditCard, label: "nav.billing" },
       ],
     },
@@ -173,9 +263,10 @@ const NAV_CONFIG = {
       items: [
         { to: "/assignments", icon: ClipboardList, label: "nav.assignments" },
         { to: "/exams", icon: CheckSquare, label: "nav.exams" },
-        { to: "/grades", icon: BookOpen, label: "nav.my_grades" },
+        { to: "/tutorials", icon: GraduationCap, label: "nav.tutorials" },
+        { to: "/grades/mine", icon: BookOpen, label: "nav.my_grades" },
         { to: "/timetable", icon: Calendar, label: "nav.timetable" },
-        { to: "/attendance", icon: CalendarCheck, label: "nav.attendance" },
+        { to: "/attendance/my", icon: CalendarCheck, label: "nav.attendance" },
       ],
     },
     {
@@ -188,7 +279,17 @@ const NAV_CONFIG = {
     {
       section: "nav.section_resources",
       items: [
-        { to: "/clubs", icon: Sparkles, label: "nav.clubs" },
+        {
+          icon: Sparkles,
+          label: "nav.clubs",
+          children: [
+            { to: "/clubs/directory", label: "nav.clubs_directory" },
+            { to: "/clubs/mine", label: "nav.clubs_mine" },
+            { to: "/clubs/calendar", label: "nav.clubs_calendar" },
+          ],
+        },
+        { to: "/certificates/mine", icon: Award, label: "nav.my_certificates" },
+        { to: "/student-support/my-support", icon: HeartHandshake, label: "nav.my_support" },
         { to: "/files", icon: FileText, label: "nav.resources" },
         { to: "/library", icon: Library, label: "nav.library" },
         { to: "/fees", icon: DollarSign, label: "nav.my_fees" },
@@ -213,9 +314,20 @@ const NAV_CONFIG = {
     {
       section: "nav.section_child_progress",
       items: [
-        { to: "/clubs", icon: Sparkles, label: "nav.clubs" },
-        { to: "/grades", icon: BookOpen, label: "nav.grades" },
-        { to: "/attendance", icon: CalendarCheck, label: "nav.attendance" },
+        {
+          icon: Sparkles,
+          label: "nav.clubs",
+          children: [
+            { to: "/clubs/directory", label: "nav.clubs_directory" },
+            { to: "/clubs/mine", label: "nav.clubs_mine" },
+            { to: "/clubs/calendar", label: "nav.clubs_calendar" },
+          ],
+        },
+        { to: "/tutorials", icon: GraduationCap, label: "nav.tutorials" },
+        { to: "/student-support/my-support", icon: HeartHandshake, label: "nav.my_support" },
+        { to: "/grades/mine", icon: BookOpen, label: "nav.grades" },
+        { to: "/certificates/mine", icon: Award, label: "nav.my_certificates" },
+        { to: "/attendance/my", icon: CalendarCheck, label: "nav.attendance" },
         { to: "/assignments", icon: ClipboardList, label: "nav.assignments" },
         { to: "/behaviour", icon: AlertTriangle, label: "nav.behaviour" },
       ],
@@ -252,6 +364,9 @@ export default function Sidebar() {
   const { setRooms, setUnread, totalUnread } = useChatStore();
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const [expandedMenus, setExpandedMenus] = useState({});
 
   // Global chat rooms and unread query
   const { data: rooms } = useQuery({
@@ -280,6 +395,16 @@ export default function Sidebar() {
     navigate("/login");
   };
 
+  const toggleMenu = (key) => {
+    if (sidebarCollapsed) {
+      collapseSidebar();
+    }
+    setExpandedMenus((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  };
+
   return (
     <aside
       className={clsx(
@@ -291,15 +416,22 @@ export default function Sidebar() {
       )}
     >
       {/* Logo */}
-      <div className="flex items-center justify-between px-4 h-16 border-b border-gray-100 dark:border-gray-800 flex-shrink-0">
-        {!sidebarCollapsed && (
-          <Link to="/" className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
-              <GraduationCap className="w-5 h-5 text-white" />
-            </div>
-            <span className="font-bold text-gray-900 dark:text-white text-lg">
-              TimhirtHub
-            </span>
+      <div className="flex items-center justify-between px-3 h-16 border-b border-gray-100 dark:border-gray-800 flex-shrink-0">
+        {!sidebarCollapsed ? (
+          <Link to="/" className="flex items-center">
+            <img
+              src={logoImg}
+              alt="TimhirtHub"
+              className="h-8 w-auto max-w-[150px] object-contain"
+            />
+          </Link>
+        ) : (
+          <Link to="/" className="flex items-center justify-center" title="TimhirtHub">
+            <img
+              src={logoImg}
+              alt="TimhirtHub"
+              className="w-7 h-7 rounded-lg object-contain"
+            />
           </Link>
         )}
         <button
@@ -315,47 +447,116 @@ export default function Sidebar() {
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto py-3 px-2 scrollbar-hide">
+      <nav className="flex-1 overflow-y-auto py-3 px-2 scrollbar-hide space-y-1">
         {navItems.map((section) => (
           <div key={section.section}>
             {!sidebarCollapsed && (
               <p className="nav-section">{t(section.section)}</p>
             )}
-            {section.items.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                className={({ isActive }) =>
-                  clsx(
-                    isActive ? "nav-item-active" : "nav-item",
-                    "relative flex items-center gap-3"
-                  )
-                }
-                title={sidebarCollapsed ? t(item.label) : undefined}
-              >
-                <div className="relative flex-shrink-0 flex items-center justify-center">
-                  <item.icon className="w-5 h-5 flex-shrink-0" />
-                  {item.badge === "chat" && unread > 0 && (
-                    <span
-                      className="absolute -top-1.5 -right-2 min-w-[17px] h-[17px] px-1 bg-red-500 text-white text-[10px] font-black rounded-full flex items-center justify-center shadow-xs border-2 border-white dark:border-gray-900 leading-none animate-pulse"
-                      title={`${unread} unread message${unread > 1 ? "s" : ""}`}
+            {section.items.map((item) => {
+              if (item.children) {
+                const isSectionActive = item.children.some(
+                  (c) =>
+                    location.pathname === c.to ||
+                    location.pathname.startsWith(c.to + "/"),
+                );
+                const isExpanded =
+                  expandedMenus[item.label] !== undefined
+                    ? expandedMenus[item.label]
+                    : isSectionActive;
+
+                return (
+                  <div key={item.label} className="space-y-1">
+                    <button
+                      type="button"
+                      onClick={() => toggleMenu(item.label)}
+                      className={clsx(
+                        isSectionActive ? "nav-item-active" : "nav-item",
+                        "w-full relative flex items-center gap-3 text-left",
+                      )}
+                      title={sidebarCollapsed ? t(item.label) : undefined}
                     >
+                      <div className="relative flex-shrink-0 flex items-center justify-center">
+                        <item.icon className="w-5 h-5 flex-shrink-0" />
+                      </div>
+
+                      {!sidebarCollapsed && (
+                        <>
+                          <span className="flex-1 truncate">{t(item.label)}</span>
+                          <ChevronDown
+                            className={clsx(
+                              "w-4 h-4 text-gray-400 transition-transform duration-200",
+                              isExpanded && "rotate-180 text-primary-600",
+                            )}
+                          />
+                        </>
+                      )}
+                    </button>
+
+                    {/* Child Links */}
+                    {!sidebarCollapsed && isExpanded && (
+                      <div className="pl-4 pr-1 py-1 space-y-1 border-l-2 border-primary-100 dark:border-primary-950 ml-5 my-1">
+                        {item.children.map((child) => (
+                          <NavLink
+                            key={child.to}
+                            to={child.to}
+                            className={({ isActive }) =>
+                              clsx(
+                                isActive
+                                  ? "bg-primary-50 text-primary-700 font-bold dark:bg-primary-950/60 dark:text-primary-400"
+                                  : "text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200",
+                                "flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
+                              )
+                            }
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-current opacity-60 flex-shrink-0" />
+                            <span className="truncate">{t(child.label)}</span>
+                          </NavLink>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
+              return (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  className={({ isActive }) =>
+                    clsx(
+                      isActive ? "nav-item-active" : "nav-item",
+                      "relative flex items-center gap-3",
+                    )
+                  }
+                  title={sidebarCollapsed ? t(item.label) : undefined}
+                >
+                  <div className="relative flex-shrink-0 flex items-center justify-center">
+                    <item.icon className="w-5 h-5 flex-shrink-0" />
+                    {item.badge === "chat" && unread > 0 && (
+                      <span
+                        className="absolute -top-1.5 -right-2 min-w-[17px] h-[17px] px-1 bg-red-500 text-white text-[10px] font-black rounded-full flex items-center justify-center shadow-xs border-2 border-white dark:border-gray-900 leading-none animate-pulse"
+                        title={`${unread} unread message${
+                          unread > 1 ? "s" : ""
+                        }`}
+                      >
+                        {unread > 99 ? "99+" : unread}
+                      </span>
+                    )}
+                  </div>
+
+                  {!sidebarCollapsed && (
+                    <span className="flex-1 truncate">{t(item.label)}</span>
+                  )}
+
+                  {!sidebarCollapsed && item.badge === "chat" && unread > 0 && (
+                    <span className="ml-auto px-2 py-0.5 bg-red-500 text-white text-[11px] font-extrabold rounded-full shadow-xs">
                       {unread > 99 ? "99+" : unread}
                     </span>
                   )}
-                </div>
-
-                {!sidebarCollapsed && (
-                  <span className="flex-1 truncate">{t(item.label)}</span>
-                )}
-
-                {!sidebarCollapsed && item.badge === "chat" && unread > 0 && (
-                  <span className="ml-auto px-2 py-0.5 bg-red-500 text-white text-[11px] font-extrabold rounded-full shadow-xs">
-                    {unread > 99 ? "99+" : unread}
-                  </span>
-                )}
-              </NavLink>
-            ))}
+                </NavLink>
+              );
+            })}
           </div>
         ))}
       </nav>

@@ -17,10 +17,20 @@ let COLOR: any = {};
 
 async function loadPdfLib() {
   if (!PDFDocument) {
-    const pdfLib = await import("pdf-lib");
-    PDFDocument = pdfLib.PDFDocument;
-    StandardFonts = pdfLib.StandardFonts;
-    rgb = pdfLib.rgb;
+    let pdfLib: any;
+    try {
+      pdfLib = require("pdf-lib/dist/pdf-lib.js");
+    } catch {
+      try {
+        // @ts-ignore
+        pdfLib = await import("pdf-lib/dist/pdf-lib.js");
+      } catch {
+        pdfLib = await import("pdf-lib");
+      }
+    }
+    PDFDocument = pdfLib.PDFDocument || pdfLib.default?.PDFDocument;
+    StandardFonts = pdfLib.StandardFonts || pdfLib.default?.StandardFonts;
+    rgb = pdfLib.rgb || pdfLib.default?.rgb;
 
     // Initialize colors after loading
     COLOR = {
@@ -371,7 +381,10 @@ export interface FeeReceiptData {
     title: string;
     type: string;
     amount: number;
-    discount: number;
+    discount?: number | null;
+    discountType?: string | null;
+    taxRate?: number | null;
+    taxAmount?: number | null;
     dueDate: Date;
   };
   payment: {
@@ -379,141 +392,237 @@ export interface FeeReceiptData {
     method: string;
     reference?: string | null;
     paidAt: Date;
+    receiptCopies?: number;
   };
   balanceRemaining: number;
+  copies?: number;
+  isInstallment?: boolean;
+  installmentInfo?: {
+    installmentNo: number;
+    numInstallments?: number;
+    dueDate?: Date;
+  };
 }
 
 export async function generateFeeReceiptPdf(
   data: FeeReceiptData,
 ): Promise<Buffer> {
   const { doc, font, bold } = await newDoc();
-  const page = doc.addPage([PAGE.width, 420]); // receipts are short — no need for a full A4 page
-  let y = drawHeader(page, bold, font, data.school, "Fee Payment Receipt");
+  const numCopies = Math.max(1, Math.min(data.copies ?? data.payment.receiptCopies ?? 1, 2));
 
-  page.drawText(`Receipt #${data.receiptNumber}`, {
-    x: 40,
-    y,
-    size: 13,
-    font: bold,
-    color: COLOR.black,
-  });
-  page.drawText(new Date(data.payment.paidAt).toLocaleDateString("en-GB"), {
-    x: PAGE.width - 160,
-    y,
-    size: 11,
-    font,
-    color: COLOR.gray,
-  });
-  y -= 30;
+  const copyLabels = [
+    numCopies === 1 ? "Official Receipt" : "Official Receipt [School Copy]",
+    "Official Receipt [Student / Parent Copy]",
+  ];
 
-  labelValue(page, font, bold, 40, y, "Student", data.student.name);
-  labelValue(
-    page,
-    font,
-    bold,
-    260,
-    y,
-    "Admission No.",
-    data.student.admissionNumber,
-  );
-  labelValue(page, font, bold, 420, y, "Class", data.student.className);
-  y -= 40;
+  for (let c = 0; c < numCopies; c++) {
+    const page = doc.addPage([PAGE.width, 450]);
+    let y = drawHeader(page, bold, font, data.school, copyLabels[c]);
 
-  labelValue(
-    page,
-    font,
-    bold,
-    40,
-    y,
-    "Fee",
-    `${data.invoice.title} (${data.invoice.type})`,
-  );
-  labelValue(page, font, bold, 300, y, "Payment Method", data.payment.method);
-  y -= 40;
+    page.drawText(`Receipt #${data.receiptNumber}`, {
+      x: 40,
+      y,
+      size: 13,
+      font: bold,
+      color: COLOR.black,
+    });
+    page.drawText(new Date(data.payment.paidAt).toLocaleDateString("en-GB"), {
+      x: PAGE.width - 160,
+      y,
+      size: 11,
+      font,
+      color: COLOR.gray,
+    });
+    y -= 28;
 
-  if (data.payment.reference) {
-    labelValue(page, font, bold, 40, y, "Reference", data.payment.reference);
-    y -= 40;
+    labelValue(page, font, bold, 40, y, "Student", data.student.name);
+    labelValue(
+      page,
+      font,
+      bold,
+      260,
+      y,
+      "Admission No.",
+      data.student.admissionNumber,
+    );
+    labelValue(page, font, bold, 420, y, "Class", data.student.className);
+    y -= 38;
+
+    const feeDescription = data.isInstallment && data.installmentInfo
+      ? `${data.invoice.title} — Installment #${data.installmentInfo.installmentNo}${data.installmentInfo.numInstallments ? ` of ${data.installmentInfo.numInstallments}` : ""}`
+      : `${data.invoice.title} (${data.invoice.type})`;
+
+    labelValue(
+      page,
+      font,
+      bold,
+      40,
+      y,
+      "Fee Description",
+      feeDescription,
+    );
+    labelValue(page, font, bold, 300, y, "Payment Method", data.payment.method);
+    y -= 38;
+
+    if (data.payment.reference) {
+      labelValue(page, font, bold, 40, y, "Reference", data.payment.reference);
+      y -= 32;
+    }
+
+    // Breakdown details (Discount / Tax if present)
+    const discountVal = data.invoice.discount ?? 0;
+    const taxRateVal = data.invoice.taxRate ?? 0;
+    const taxAmtVal = data.invoice.taxAmount ?? 0;
+
+    if (discountVal > 0 || taxRateVal > 0) {
+      const discountText = data.invoice.discountType === "PERCENT"
+        ? `${discountVal}% (ETB ${((data.invoice.amount * discountVal) / 100).toLocaleString()})`
+        : `ETB ${discountVal.toLocaleString()}`;
+
+      page.drawText(`Base Fee: ETB ${data.invoice.amount.toLocaleString()}   |   Discount: ${discountText}   |   Tax (${taxRateVal}%): ETB ${taxAmtVal.toLocaleString()}`, {
+        x: 40,
+        y: y + 8,
+        size: 8.5,
+        font,
+        color: COLOR.gray,
+      });
+      y -= 14;
+    }
+
+    page.drawLine({
+      start: { x: 40, y },
+      end: { x: PAGE.width - 40, y },
+      thickness: 0.5,
+      color: COLOR.gray,
+    });
+    y -= 22;
+
+    page.drawText("Amount Paid", { x: 40, y, size: 11, font, color: COLOR.gray });
+    page.drawText(`ETB ${data.payment.amount.toLocaleString()}`, {
+      x: PAGE.width - 160,
+      y,
+      size: 13,
+      font: bold,
+      color: COLOR.green,
+    });
+    y -= 20;
+
+    page.drawText("Balance Remaining", {
+      x: 40,
+      y,
+      size: 11,
+      font,
+      color: COLOR.gray,
+    });
+    page.drawText(`ETB ${data.balanceRemaining.toLocaleString()}`, {
+      x: PAGE.width - 160,
+      y,
+      size: 12,
+      font: bold,
+      color: data.balanceRemaining > 0 ? COLOR.red : COLOR.green,
+    });
+
+    drawFooter(
+      page,
+      font,
+      `${data.school.name} — ${copyLabels[c]}. Keep for your records.`,
+    );
   }
 
-  page.drawLine({
-    start: { x: 40, y },
-    end: { x: PAGE.width - 40, y },
-    thickness: 0.5,
-    color: COLOR.gray,
-  });
-  y -= 26;
-
-  page.drawText("Amount Paid", { x: 40, y, size: 11, font, color: COLOR.gray });
-  page.drawText(`ETB ${data.payment.amount.toLocaleString()}`, {
-    x: PAGE.width - 160,
-    y,
-    size: 14,
-    font: bold,
-    color: COLOR.green,
-  });
-  y -= 24;
-
-  page.drawText("Balance Remaining", {
-    x: 40,
-    y,
-    size: 11,
-    font,
-    color: COLOR.gray,
-  });
-  page.drawText(`ETB ${data.balanceRemaining.toLocaleString()}`, {
-    x: PAGE.width - 160,
-    y,
-    size: 12,
-    font: bold,
-    color: data.balanceRemaining > 0 ? COLOR.red : COLOR.green,
-  });
-
-  drawFooter(
-    page,
-    font,
-    `${data.school.name} — Official Receipt. Keep for your records.`,
-  );
   return Buffer.from(await doc.save());
 }
 
 // ── 3. ID card ────────────────────────────────────────────────────────────────
 // Sized to a standard CR80 card (85.6mm x 54mm ≈ 242.6 x 153.4 points) so it
 // prints correctly on ID card printers as well as a normal desktop/thermal one.
-export interface IdCardData {
-  school: SchoolHeader;
-  person: {
-    name: string;
-    role: string;
-    idNumber: string;
-    className?: string | null;
-    gradeLevelName?: string | null;
-    gender?: string | null;
-    dateOfBirth?: string | null;
-    phone?: string | null;
-    email?: string | null;
-    rollNumber?: string | null;
-    validThrough?: string | null;
-  };
+
+export interface IdCardPerson {
+  name: string;
+  role: string;
+  idNumber: string;
+  className?: string | null;
+  gradeLevelName?: string | null;
+  gender?: string | null;
+  dateOfBirth?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  rollNumber?: string | null;
+  bloodGroup?: string | null;
+  emergencyPhone?: string | null;
+  validThrough?: string | null;
+  houseName?: string | null;
+  houseColor?: string | null;
+  department?: string | null;
 }
 
-export async function generateIdCardPdf(data: IdCardData): Promise<Buffer> {
-  const { doc, font, bold } = await newDoc();
-  const width = 242.6,
-    height = 153.4;
+export interface IdCardData {
+  school: SchoolHeader;
+  person: IdCardPerson;
+  layout?: "HORIZONTAL" | "VERTICAL";
+  colorMode?: "NONE" | "BACKGROUND" | "STRIP";
+  validUpto?: string | null;
+  printBack?: boolean;
+}
+
+export interface BatchIdCardsData {
+  school: SchoolHeader;
+  persons: IdCardPerson[];
+  layout?: "HORIZONTAL" | "VERTICAL";
+  colorMode?: "NONE" | "BACKGROUND" | "STRIP";
+  validUpto?: string | null;
+  printBack?: boolean;
+}
+
+function parseHexRgb(hex?: string | null) {
+  if (!hex) return rgb(0.12, 0.22, 0.39);
+  const clean = hex.replace("#", "").trim();
+  if (clean.length !== 3 && clean.length !== 6) return rgb(0.12, 0.22, 0.39);
+  const fullHex = clean.length === 3
+    ? clean.split("").map((c) => c + c).join("")
+    : clean;
+  const num = parseInt(fullHex, 16);
+  if (isNaN(num)) return rgb(0.12, 0.22, 0.39);
+  return rgb(((num >> 16) & 255) / 255, ((num >> 8) & 255) / 255, (num & 255) / 255);
+}
+
+function renderSingleIdCard(
+  doc: any,
+  font: any,
+  bold: any,
+  school: SchoolHeader,
+  person: IdCardPerson,
+  options: {
+    layout?: "HORIZONTAL" | "VERTICAL";
+    colorMode?: "NONE" | "BACKGROUND" | "STRIP";
+    validUpto?: string | null;
+    printBack?: boolean;
+  }
+) {
+  const isVertical = options.layout === "VERTICAL";
+  const colorMode = options.colorMode || (person.houseColor ? "STRIP" : "NONE");
+  const printBack = options.printBack !== false;
+
+  const width = isVertical ? 153.4 : 242.6;
+  const height = isVertical ? 242.6 : 153.4;
+
+  const houseRgb = parseHexRgb(person.houseColor);
 
   // ══════════════════════════════════════════════════════════════
   // PAGE 1: FRONT SIDE
   // ══════════════════════════════════════════════════════════════
   const frontPage = doc.addPage([width, height]);
 
-  // Card Background & Outer Border
+  // Card Background
+  let bgColor = rgb(0.98, 0.98, 0.99);
+  if (colorMode === "BACKGROUND" && person.houseColor) {
+    bgColor = rgb(0.95, 0.96, 0.98);
+  }
   frontPage.drawRectangle({
     x: 0,
     y: 0,
     width,
     height,
-    color: rgb(0.98, 0.98, 0.99),
+    color: bgColor,
   });
   frontPage.drawRectangle({
     x: 1,
@@ -524,320 +633,487 @@ export async function generateIdCardPdf(data: IdCardData): Promise<Buffer> {
     borderWidth: 1,
   });
 
-  // Top Header Banner (Deep Navy + Gold Accent)
-  frontPage.drawRectangle({
-    x: 0,
-    y: height - 38,
-    width,
-    height: 38,
-    color: rgb(0.08, 0.16, 0.32),
-  });
-  frontPage.drawRectangle({
-    x: 0,
-    y: height - 40,
-    width,
-    height: 2,
-    color: rgb(0.88, 0.72, 0.22),
-  });
+  if (isVertical) {
+    // ──────── VERTICAL LAYOUT ────────
+    const headerHeight = 44;
+    frontPage.drawRectangle({
+      x: 0,
+      y: height - headerHeight,
+      width,
+      height: headerHeight,
+      color: rgb(0.08, 0.16, 0.32),
+    });
 
-  // School Name & Subtitle
-  frontPage.drawText(data.school.name, {
-    x: 10,
-    y: height - 18,
-    size: 10,
-    font: bold,
-    color: COLOR.white,
-    maxWidth: width - 20,
-  });
-  frontPage.drawText("STUDENT IDENTITY CARD", {
-    x: 10,
-    y: height - 30,
-    size: 6.5,
-    font: bold,
-    color: rgb(0.88, 0.72, 0.22),
-  });
+    // Accent Strip
+    const stripColor = colorMode === "STRIP" && person.houseColor ? houseRgb : rgb(0.88, 0.72, 0.22);
+    frontPage.drawRectangle({
+      x: 0,
+      y: height - headerHeight - 3,
+      width,
+      height: 3,
+      color: stripColor,
+    });
 
-  // Photo Frame on Left
-  const photoX = 10;
-  const photoY = height - 118;
-  const photoW = 58;
-  const photoH = 70;
+    frontPage.drawText(school.name, {
+      x: 10,
+      y: height - 20,
+      size: 9,
+      font: bold,
+      color: COLOR.white,
+      maxWidth: width - 20,
+    });
+    frontPage.drawText(`${person.role.toUpperCase()} IDENTITY CARD`, {
+      x: 10,
+      y: height - 34,
+      size: 6,
+      font: bold,
+      color: stripColor,
+    });
 
-  frontPage.drawRectangle({
-    x: photoX,
-    y: photoY,
-    width: photoW,
-    height: photoH,
-    color: rgb(0.93, 0.95, 0.98),
-    borderColor: rgb(0.2, 0.35, 0.55),
-    borderWidth: 1.5,
-  });
+    // Photo Box centered
+    const photoW = 54;
+    const photoH = 62;
+    const photoX = (width - photoW) / 2;
+    const photoY = height - 120;
 
-  // Avatar Icon Silhouette inside Photo Frame
-  const initials = data.person.name
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
+    frontPage.drawRectangle({
+      x: photoX,
+      y: photoY,
+      width: photoW,
+      height: photoH,
+      color: rgb(0.93, 0.95, 0.98),
+      borderColor: rgb(0.2, 0.35, 0.55),
+      borderWidth: 1.2,
+    });
 
-  frontPage.drawRectangle({
-    x: photoX + 11,
-    y: photoY + 24,
-    width: 36,
-    height: 36,
-    color: rgb(0.82, 0.88, 0.95),
-  });
-  frontPage.drawText(initials || "ST", {
-    x: photoX + 18,
-    y: photoY + 36,
-    size: 14,
-    font: bold,
-    color: rgb(0.12, 0.25, 0.45),
-  });
-  frontPage.drawText("OFFICIAL PHOTO", {
-    x: photoX + 6,
-    y: photoY + 8,
-    size: 5.5,
-    font: bold,
-    color: rgb(0.4, 0.5, 0.65),
-  });
+    const initials = person.name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase();
 
-  // Details Column
-  const textX = 76;
-  let textY = height - 54;
+    frontPage.drawRectangle({
+      x: photoX + 11,
+      y: photoY + 18,
+      width: 32,
+      height: 32,
+      color: rgb(0.82, 0.88, 0.95),
+    });
+    frontPage.drawText(initials || "ID", {
+      x: photoX + 18,
+      y: photoY + 28,
+      size: 13,
+      font: bold,
+      color: rgb(0.12, 0.25, 0.45),
+    });
+    frontPage.drawText("OFFICIAL PHOTO", {
+      x: photoX + 6,
+      y: photoY + 5,
+      size: 5,
+      font: bold,
+      color: rgb(0.4, 0.5, 0.65),
+    });
 
-  // Student Full Name
-  frontPage.drawText(data.person.name, {
-    x: textX,
-    y: textY,
-    size: 11,
-    font: bold,
-    color: rgb(0.08, 0.12, 0.2),
-    maxWidth: width - textX - 8,
-  });
-  textY -= 12;
+    // Name & Details
+    frontPage.drawText(person.name, {
+      x: 10,
+      y: photoY - 14,
+      size: 10,
+      font: bold,
+      color: rgb(0.08, 0.12, 0.2),
+      maxWidth: width - 20,
+    });
 
-  // Role Pill Badge
-  frontPage.drawRectangle({
-    x: textX,
-    y: textY - 2,
-    width: 52,
-    height: 11,
-    color: rgb(0.9, 0.95, 1),
-    borderColor: rgb(0.65, 0.8, 0.98),
-    borderWidth: 0.5,
-  });
-  frontPage.drawText("STUDENT", {
-    x: textX + 6,
-    y: textY + 1,
-    size: 6,
-    font: bold,
-    color: rgb(0.1, 0.35, 0.75),
-  });
-  textY -= 14;
+    let textY = photoY - 28;
+    const drawFieldV = (label: string, value: string) => {
+      frontPage.drawText(label, {
+        x: 10,
+        y: textY,
+        size: 6,
+        font: bold,
+        color: rgb(0.45, 0.5, 0.6),
+      });
+      frontPage.drawText(value, {
+        x: 48,
+        y: textY,
+        size: 6,
+        font: bold,
+        color: rgb(0.1, 0.15, 0.25),
+        maxWidth: width - 52,
+      });
+      textY -= 8.5;
+    };
 
-  // Field Rows
-  const drawField = (label: string, value: string) => {
-    frontPage.drawText(label, {
+    drawFieldV("ID / Adm:", person.idNumber);
+    if (person.className || person.gradeLevelName) {
+      drawFieldV("Class:", [person.className, person.gradeLevelName ? `(${person.gradeLevelName})` : null].filter(Boolean).join(" "));
+    } else if (person.department) {
+      drawFieldV("Dept:", person.department);
+    }
+    if (person.rollNumber) drawFieldV("Roll No:", person.rollNumber);
+    if (person.bloodGroup) drawFieldV("Blood Grp:", person.bloodGroup);
+    if (person.houseName) drawFieldV("House:", person.houseName);
+    if (person.emergencyPhone) drawFieldV("Emerg Tel:", person.emergencyPhone);
+
+    // Bottom barcode band
+    frontPage.drawRectangle({
+      x: 0,
+      y: 0,
+      width,
+      height: 18,
+      color: rgb(0.94, 0.95, 0.97),
+    });
+    frontPage.drawLine({
+      start: { x: 0, y: 18 },
+      end: { x: width, y: 18 },
+      thickness: 0.5,
+      color: rgb(0.82, 0.85, 0.9),
+    });
+
+    for (let i = 0; i < 20; i++) {
+      const isThick = i % 3 === 0 || i % 7 === 0;
+      frontPage.drawLine({
+        start: { x: 10 + i * 2.6, y: 4 },
+        end: { x: 10 + i * 2.6, y: 14 },
+        thickness: isThick ? 1.5 : 0.8,
+        color: rgb(0.15, 0.15, 0.2),
+      });
+    }
+
+    frontPage.drawText(`EXP: ${options.validUpto || person.validThrough || "2026-2027"}`, {
+      x: width - 68,
+      y: 6.5,
+      size: 5.5,
+      font: bold,
+      color: rgb(0.3, 0.35, 0.45),
+    });
+
+  } else {
+    // ──────── HORIZONTAL LAYOUT ────────
+    frontPage.drawRectangle({
+      x: 0,
+      y: height - 38,
+      width,
+      height: 38,
+      color: rgb(0.08, 0.16, 0.32),
+    });
+
+    const stripColor = colorMode === "STRIP" && person.houseColor ? houseRgb : rgb(0.88, 0.72, 0.22);
+    frontPage.drawRectangle({
+      x: 0,
+      y: height - 40,
+      width,
+      height: 2,
+      color: stripColor,
+    });
+
+    frontPage.drawText(school.name, {
+      x: 10,
+      y: height - 18,
+      size: 10,
+      font: bold,
+      color: COLOR.white,
+      maxWidth: width - 20,
+    });
+    frontPage.drawText(`${person.role.toUpperCase()} IDENTITY CARD`, {
+      x: 10,
+      y: height - 30,
+      size: 6.5,
+      font: bold,
+      color: stripColor,
+    });
+
+    // Photo frame on Left
+    const photoX = 10;
+    const photoY = height - 118;
+    const photoW = 58;
+    const photoH = 70;
+
+    frontPage.drawRectangle({
+      x: photoX,
+      y: photoY,
+      width: photoW,
+      height: photoH,
+      color: rgb(0.93, 0.95, 0.98),
+      borderColor: rgb(0.2, 0.35, 0.55),
+      borderWidth: 1.5,
+    });
+
+    const initials = person.name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase();
+
+    frontPage.drawRectangle({
+      x: photoX + 11,
+      y: photoY + 24,
+      width: 36,
+      height: 36,
+      color: rgb(0.82, 0.88, 0.95),
+    });
+    frontPage.drawText(initials || "ID", {
+      x: photoX + 18,
+      y: photoY + 36,
+      size: 14,
+      font: bold,
+      color: rgb(0.12, 0.25, 0.45),
+    });
+    frontPage.drawText("OFFICIAL PHOTO", {
+      x: photoX + 6,
+      y: photoY + 8,
+      size: 5.5,
+      font: bold,
+      color: rgb(0.4, 0.5, 0.65),
+    });
+
+    // Details Column
+    const textX = 76;
+    let textY = height - 54;
+
+    frontPage.drawText(person.name, {
       x: textX,
       y: textY,
-      size: 6.5,
+      size: 10.5,
       font: bold,
-      color: rgb(0.45, 0.5, 0.6),
+      color: rgb(0.08, 0.12, 0.2),
+      maxWidth: width - textX - 8,
     });
-    frontPage.drawText(value, {
-      x: textX + 42,
-      y: textY,
-      size: 6.5,
+    textY -= 12;
+
+    // Role Pill Badge
+    frontPage.drawRectangle({
+      x: textX,
+      y: textY - 2,
+      width: 54,
+      height: 11,
+      color: rgb(0.9, 0.95, 1),
+      borderColor: rgb(0.65, 0.8, 0.98),
+      borderWidth: 0.5,
+    });
+    frontPage.drawText(person.role.toUpperCase(), {
+      x: textX + 6,
+      y: textY + 1,
+      size: 6,
       font: bold,
-      color: rgb(0.1, 0.15, 0.25),
-      maxWidth: width - (textX + 44),
+      color: rgb(0.1, 0.35, 0.75),
     });
-    textY -= 9.5;
-  };
+    textY -= 13;
 
-  drawField("Adm No:", data.person.idNumber);
+    const drawFieldH = (label: string, value: string) => {
+      frontPage.drawText(label, {
+        x: textX,
+        y: textY,
+        size: 6.5,
+        font: bold,
+        color: rgb(0.45, 0.5, 0.6),
+      });
+      frontPage.drawText(value, {
+        x: textX + 44,
+        y: textY,
+        size: 6.5,
+        font: bold,
+        color: rgb(0.1, 0.15, 0.25),
+        maxWidth: width - (textX + 46),
+      });
+      textY -= 9;
+    };
 
-  const classLabel = data.person.className
-    ? `${data.person.className}${data.person.gradeLevelName ? ` (${data.person.gradeLevelName})` : ""}`
-    : data.person.gradeLevelName || "—";
-  drawField("Class:", classLabel);
+    drawFieldH("ID / Adm:", person.idNumber);
 
-  if (data.person.rollNumber) {
-    drawField("Roll No:", data.person.rollNumber);
-  }
+    if (person.className || person.gradeLevelName) {
+      const classLabel = person.className
+        ? `${person.className}${person.gradeLevelName ? ` (${person.gradeLevelName})` : ""}`
+        : person.gradeLevelName || "—";
+      drawFieldH("Class:", classLabel);
+    } else if (person.department) {
+      drawFieldH("Dept:", person.department);
+    }
 
-  if (data.person.gender) {
-    drawField("Gender:", data.person.gender === "MALE" ? "Male" : "Female");
-  }
+    if (person.rollNumber) drawFieldH("Roll No:", person.rollNumber);
+    if (person.bloodGroup) drawFieldH("Blood Grp:", person.bloodGroup);
+    if (person.houseName) drawFieldH("House:", person.houseName);
+    if (person.dateOfBirth) drawFieldH("DOB:", person.dateOfBirth);
 
-  if (data.person.dateOfBirth) {
-    drawField("DOB:", data.person.dateOfBirth);
-  }
-
-  // Bottom Simulated Barcode & Serial Band
-  frontPage.drawRectangle({
-    x: 0,
-    y: 0,
-    width,
-    height: 18,
-    color: rgb(0.94, 0.95, 0.97),
-  });
-  frontPage.drawLine({
-    start: { x: 0, y: 18 },
-    end: { x: width, y: 18 },
-    thickness: 0.5,
-    color: rgb(0.82, 0.85, 0.9),
-  });
-
-  // Draw simulated barcode lines
-  const barStartX = 10;
-  for (let i = 0; i < 28; i++) {
-    const isThick = i % 3 === 0 || i % 7 === 0;
+    // Bottom Barcode Band
+    frontPage.drawRectangle({
+      x: 0,
+      y: 0,
+      width,
+      height: 18,
+      color: rgb(0.94, 0.95, 0.97),
+    });
     frontPage.drawLine({
-      start: { x: barStartX + i * 2.8, y: 4 },
-      end: { x: barStartX + i * 2.8, y: 14 },
-      thickness: isThick ? 1.5 : 0.8,
-      color: rgb(0.15, 0.15, 0.2),
+      start: { x: 0, y: 18 },
+      end: { x: width, y: 18 },
+      thickness: 0.5,
+      color: rgb(0.82, 0.85, 0.9),
+    });
+
+    const barStartX = 10;
+    for (let i = 0; i < 28; i++) {
+      const isThick = i % 3 === 0 || i % 7 === 0;
+      frontPage.drawLine({
+        start: { x: barStartX + i * 2.8, y: 4 },
+        end: { x: barStartX + i * 2.8, y: 14 },
+        thickness: isThick ? 1.5 : 0.8,
+        color: rgb(0.15, 0.15, 0.2),
+      });
+    }
+
+    frontPage.drawText(`EXP: ${options.validUpto || person.validThrough || "2026-2027"}`, {
+      x: width - 82,
+      y: 7,
+      size: 6.5,
+      font: bold,
+      color: rgb(0.3, 0.35, 0.45),
     });
   }
-
-  frontPage.drawText(`EXP: ${data.person.validThrough || "2026-2027"}`, {
-    x: width - 82,
-    y: 7,
-    size: 6.5,
-    font: bold,
-    color: rgb(0.3, 0.35, 0.45),
-  });
 
   // ══════════════════════════════════════════════════════════════
   // PAGE 2: BACK SIDE
   // ══════════════════════════════════════════════════════════════
-  const backPage = doc.addPage([width, height]);
-
-  // Card Background
-  backPage.drawRectangle({
-    x: 0,
-    y: 0,
-    width,
-    height,
-    color: rgb(0.98, 0.98, 0.99),
-  });
-  backPage.drawRectangle({
-    x: 1,
-    y: 1,
-    width: width - 2,
-    height: height - 2,
-    borderColor: rgb(0.8, 0.84, 0.9),
-    borderWidth: 1,
-  });
-
-  // Top Slim Banner
-  backPage.drawRectangle({
-    x: 0,
-    y: height - 16,
-    width,
-    height: 16,
-    color: rgb(0.08, 0.16, 0.32),
-  });
-  backPage.drawText("TERMS & CONDITIONS", {
-    x: 10,
-    y: height - 11,
-    size: 7,
-    font: bold,
-    color: COLOR.white,
-  });
-
-  let backY = height - 28;
-  const terms = [
-    "1. This card is the property of " + data.school.name + ".",
-    "2. It must be carried and displayed on campus at all times.",
-    "3. Non-transferable. Loss must be reported immediately.",
-    "4. If found, please return to the school administration office.",
-  ];
-
-  for (const t of terms) {
-    backPage.drawText(t, {
-      x: 10,
-      y: backY,
-      size: 5.5,
-      font,
-      color: rgb(0.3, 0.35, 0.4),
-      maxWidth: width - 20,
+  if (printBack) {
+    const backPage = doc.addPage([width, height]);
+    backPage.drawRectangle({
+      x: 0,
+      y: 0,
+      width,
+      height,
+      color: rgb(0.98, 0.98, 0.99),
     });
-    backY -= 8;
+    backPage.drawRectangle({
+      x: 1,
+      y: 1,
+      width: width - 2,
+      height: height - 2,
+      borderColor: rgb(0.8, 0.84, 0.9),
+      borderWidth: 1,
+    });
+
+    backPage.drawRectangle({
+      x: 0,
+      y: height - 16,
+      width,
+      height: 16,
+      color: rgb(0.08, 0.16, 0.32),
+    });
+    backPage.drawText("TERMS & CONDITIONS", {
+      x: 10,
+      y: height - 11,
+      size: 6.5,
+      font: bold,
+      color: COLOR.white,
+    });
+
+    let backY = height - 28;
+    const terms = [
+      "1. Property of " + school.name + ".",
+      "2. Must be carried and displayed on campus at all times.",
+      "3. Non-transferable. Loss must be reported immediately.",
+      "4. If found, please return to the school administration office.",
+    ];
+
+    for (const t of terms) {
+      backPage.drawText(t, {
+        x: 10,
+        y: backY,
+        size: isVertical ? 5 : 5.5,
+        font,
+        color: rgb(0.3, 0.35, 0.4),
+        maxWidth: width - 20,
+      });
+      backY -= isVertical ? 7.5 : 8;
+    }
+
+    if (person.emergencyPhone) {
+      backPage.drawText(`Emergency Contact: ${person.emergencyPhone}`, {
+        x: 10,
+        y: backY - 2,
+        size: 5.5,
+        font: bold,
+        color: rgb(0.8, 0.2, 0.2),
+      });
+      backY -= 10;
+    }
+
+    // Campus Contact Box
+    backY -= 2;
+    const boxHeight = isVertical ? 28 : 22;
+    backPage.drawRectangle({
+      x: 10,
+      y: backY - boxHeight,
+      width: width - 20,
+      height: boxHeight,
+      color: rgb(0.93, 0.95, 0.98),
+      borderColor: rgb(0.85, 0.88, 0.93),
+      borderWidth: 0.5,
+    });
+
+    const contactText = [
+      school.address ? `Address: ${school.address}` : null,
+      school.phone ? `Tel: ${school.phone}` : null,
+      school.email ? `Email: ${school.email}` : null,
+    ]
+      .filter(Boolean)
+      .join("  |  ");
+
+    backPage.drawText("CAMPUS CONTACT INFO", {
+      x: 14,
+      y: backY - 7,
+      size: 5,
+      font: bold,
+      color: rgb(0.12, 0.25, 0.45),
+    });
+    backPage.drawText(contactText || "School Administration Office", {
+      x: 14,
+      y: backY - 16,
+      size: 4.8,
+      font,
+      color: rgb(0.35, 0.4, 0.48),
+      maxWidth: width - 28,
+    });
+
+    // Principal Signature Line
+    backPage.drawLine({
+      start: { x: width - 85, y: 18 },
+      end: { x: width - 15, y: 18 },
+      thickness: 0.8,
+      color: rgb(0.2, 0.25, 0.35),
+    });
+    backPage.drawText("Principal Signature", {
+      x: width - 78,
+      y: 11,
+      size: 5.5,
+      font: bold,
+      color: rgb(0.3, 0.35, 0.45),
+    });
   }
+}
 
-  // School Contact Box
-  backY -= 2;
-  backPage.drawRectangle({
-    x: 10,
-    y: backY - 24,
-    width: width - 20,
-    height: 24,
-    color: rgb(0.93, 0.95, 0.98),
-    borderColor: rgb(0.85, 0.88, 0.93),
-    borderWidth: 0.5,
+export async function generateIdCardPdf(data: IdCardData): Promise<Buffer> {
+  const { doc, font, bold } = await newDoc();
+  renderSingleIdCard(doc, font, bold, data.school, data.person, {
+    layout: data.layout,
+    colorMode: data.colorMode,
+    validUpto: data.validUpto,
+    printBack: data.printBack,
   });
+  return Buffer.from(await doc.save());
+}
 
-  const contactText = [
-    data.school.address ? `Address: ${data.school.address}` : null,
-    data.school.phone ? `Tel: ${data.school.phone}` : null,
-    data.school.email ? `Email: ${data.school.email}` : null,
-  ]
-    .filter(Boolean)
-    .join("  |  ");
-
-  backPage.drawText("CAMPUS CONTACT INFO", {
-    x: 14,
-    y: backY - 7,
-    size: 5.5,
-    font: bold,
-    color: rgb(0.12, 0.25, 0.45),
-  });
-  backPage.drawText(contactText || "School Administration Office", {
-    x: 14,
-    y: backY - 17,
-    size: 5,
-    font,
-    color: rgb(0.35, 0.4, 0.48),
-    maxWidth: width - 28,
-  });
-
-  // Principal Signature & Official Seal Box
-  backPage.drawLine({
-    start: { x: width - 90, y: 22 },
-    end: { x: width - 15, y: 22 },
-    thickness: 0.8,
-    color: rgb(0.2, 0.25, 0.35),
-  });
-  backPage.drawText("Principal Signature", {
-    x: width - 82,
-    y: 14,
-    size: 6,
-    font: bold,
-    color: rgb(0.3, 0.35, 0.45),
-  });
-
-  // Seal badge simulation
-  backPage.drawRectangle({
-    x: 15,
-    y: 10,
-    width: 60,
-    height: 20,
-    color: rgb(0.92, 0.94, 0.98),
-    borderColor: rgb(0.8, 0.85, 0.92),
-    borderWidth: 0.5,
-  });
-  backPage.drawText("OFFICIAL SEAL", {
-    x: 20,
-    y: 17,
-    size: 5.5,
-    font: bold,
-    color: rgb(0.2, 0.35, 0.55),
-  });
-
+export async function generateBatchIdCardsPdf(data: BatchIdCardsData): Promise<Buffer> {
+  const { doc, font, bold } = await newDoc();
+  for (const person of data.persons) {
+    renderSingleIdCard(doc, font, bold, data.school, person, {
+      layout: data.layout,
+      colorMode: data.colorMode,
+      validUpto: data.validUpto,
+      printBack: data.printBack,
+    });
+  }
   return Buffer.from(await doc.save());
 }
 
@@ -1093,3 +1369,1302 @@ export async function generateMarkSheetPdf(
   drawFooter(page, font, `${data.school.name} — Master Mark Sheet`);
   return Buffer.from(await doc.save());
 }
+
+// ── 6. Cumulative Annual Report Card ─────────────────────────────────────────
+export interface CumulativeReportCardData {
+  school: SchoolHeader;
+  student: {
+    name: string;
+    admissionNumber: string;
+    rollNumber?: string | null;
+    className: string;
+    gradeLevelName?: string | null;
+    gender?: string | null;
+  };
+  academicYear: string;
+  summary: {
+    overallAverage: number | null;
+    overallRank: number | null;
+    classSize?: number | null;
+    isPassing: boolean;
+    passMarkPercentage?: number;
+    termBreakdown: {
+      termId?: string;
+      termName: string;
+      gpa?: number | null;
+      percentage?: number | null;
+      rank?: number | null;
+      totalMarks?: number | null;
+    }[];
+  };
+  homeroomTeacherName?: string | null;
+  principalName?: string | null;
+  issueDate?: string | null;
+  layout?: "ONE_SIDED" | "TWO_SIDED";
+  backSideDetails?: {
+    recentTermName?: string | null;
+    subjects?: {
+      subjectName: string;
+      marksObtained: number;
+      totalMarks: number;
+      grade?: string | null;
+    }[];
+    teacherComments?: string | null;
+    attendanceSummary?: {
+      totalDays?: number;
+      presentDays?: number;
+      absentDays?: number;
+      lateDays?: number;
+      attendancePercentage?: number;
+    } | null;
+  };
+}
+
+export async function generateCumulativeReportCardPdf(
+  data: CumulativeReportCardData,
+): Promise<Buffer> {
+  const { doc, font, bold } = await newDoc();
+  let page = doc.addPage([PAGE.width, PAGE.height]);
+  let y = drawHeader(
+    page,
+    bold,
+    font,
+    data.school,
+    `Annual Academic Year Report Card — ${data.academicYear}`,
+  );
+
+  // Student details section
+  page.drawText(`${data.student.name}`, {
+    x: 40,
+    y,
+    size: 16,
+    font: bold,
+    color: COLOR.black,
+  });
+  y -= 22;
+
+  labelValue(
+    page,
+    font,
+    bold,
+    40,
+    y,
+    "Admission No.",
+    data.student.admissionNumber,
+  );
+  labelValue(
+    page,
+    font,
+    bold,
+    180,
+    y,
+    "Class",
+    [data.student.className, data.student.gradeLevelName ? `(${data.student.gradeLevelName})` : null]
+      .filter(Boolean)
+      .join(" "),
+  );
+  labelValue(
+    page,
+    font,
+    bold,
+    340,
+    y,
+    "Academic Year",
+    data.academicYear,
+  );
+  if (data.student.rollNumber) {
+    labelValue(page, font, bold, 460, y, "Roll No.", data.student.rollNumber);
+  }
+  y -= 42;
+
+  // Section Header: Term-by-Term Performance
+  page.drawText("ACADEMIC TERM BREAKDOWN", {
+    x: 40,
+    y,
+    size: 10,
+    font: bold,
+    color: COLOR.navy,
+  });
+  y -= 14;
+
+  // Table header
+  const colX = { term: 40, gpa: 220, percentage: 320, rank: 440 };
+  page.drawRectangle({
+    x: 40,
+    y: y - 4,
+    width: PAGE.width - 80,
+    height: 22,
+    color: COLOR.lightGray,
+  });
+  page.drawText("Term / Semester", {
+    x: colX.term + 8,
+    y: y + 2,
+    size: 9.5,
+    font: bold,
+    color: COLOR.black,
+  });
+  page.drawText("GPA (4.0)", {
+    x: colX.gpa,
+    y: y + 2,
+    size: 9.5,
+    font: bold,
+    color: COLOR.black,
+  });
+  page.drawText("Score (%)", {
+    x: colX.percentage,
+    y: y + 2,
+    size: 9.5,
+    font: bold,
+    color: COLOR.black,
+  });
+  page.drawText("Term Rank", {
+    x: colX.rank,
+    y: y + 2,
+    size: 9.5,
+    font: bold,
+    color: COLOR.black,
+  });
+  y -= 26;
+
+  const terms = data.summary.termBreakdown || [];
+  if (terms.length === 0) {
+    page.drawText("No term grade reports recorded for this academic year yet.", {
+      x: 48,
+      y,
+      size: 9.5,
+      font,
+      color: COLOR.gray,
+    });
+    y -= 22;
+  } else {
+    for (const t of terms) {
+      page.drawText(t.termName || "Academic Term", {
+        x: colX.term + 8,
+        y,
+        size: 9.5,
+        font: bold,
+        color: COLOR.black,
+      });
+      page.drawText(t.gpa != null ? Number(t.gpa).toFixed(2) : "—", {
+        x: colX.gpa,
+        y,
+        size: 9.5,
+        font,
+        color: COLOR.black,
+      });
+      page.drawText(
+        t.percentage != null ? `${Number(t.percentage).toFixed(1)}%` : "—",
+        {
+          x: colX.percentage,
+          y,
+          size: 9.5,
+          font: bold,
+          color: COLOR.black,
+        },
+      );
+      page.drawText(t.rank != null ? `#${t.rank}` : "—", {
+        x: colX.rank,
+        y,
+        size: 9.5,
+        font,
+        color: COLOR.black,
+      });
+
+      y -= 8;
+      page.drawLine({
+        start: { x: 40, y },
+        end: { x: PAGE.width - 40, y },
+        thickness: 0.5,
+        color: rgb(0.9, 0.9, 0.9),
+      });
+      y -= 16;
+    }
+  }
+
+  y -= 10;
+
+  // Cumulative Summary Box
+  const summaryBoxHeight = 85;
+  page.drawRectangle({
+    x: 40,
+    y: y - summaryBoxHeight,
+    width: PAGE.width - 80,
+    height: summaryBoxHeight,
+    color: rgb(0.96, 0.97, 0.99),
+    borderColor: rgb(0.8, 0.85, 0.93),
+    borderWidth: 1,
+  });
+
+  page.drawText("CUMULATIVE ANNUAL SUMMARY", {
+    x: 55,
+    y: y - 18,
+    size: 10,
+    font: bold,
+    color: COLOR.navy,
+  });
+
+  const avgStr =
+    data.summary.overallAverage != null
+      ? `${Number(data.summary.overallAverage).toFixed(1)}%`
+      : "—";
+  const rankStr =
+    data.summary.overallRank != null
+      ? `#${data.summary.overallRank}${data.summary.classSize ? ` / ${data.summary.classSize}` : ""}`
+      : "—";
+  const statusStr = data.summary.isPassing ? "PASSED / PROMOTED" : "RETAINED / UNDER REVIEW";
+  const statusColor = data.summary.isPassing ? COLOR.green : COLOR.red;
+
+  labelValue(page, font, bold, 55, y - 36, "Overall Average", avgStr);
+  labelValue(page, font, bold, 210, y - 36, "Overall Class Rank", rankStr);
+  labelValue(page, font, bold, 360, y - 36, "Academic Standing", statusStr);
+
+  // Status Badge
+  page.drawRectangle({
+    x: 360,
+    y: y - 72,
+    width: 140,
+    height: 18,
+    color: data.summary.isPassing ? rgb(0.9, 0.97, 0.92) : rgb(0.99, 0.92, 0.92),
+    borderColor: statusColor,
+    borderWidth: 0.8,
+  });
+  page.drawText(statusStr, {
+    x: 366,
+    y: y - 66,
+    size: 7.5,
+    font: bold,
+    color: statusColor,
+  });
+
+  y -= summaryBoxHeight + 35;
+
+  // Signatures Section
+  const dateText = data.issueDate || new Date().toLocaleDateString("en-GB");
+
+  page.drawText("Class Teacher / Homeroom Signatory:", {
+    x: 40,
+    y,
+    size: 8.5,
+    font: bold,
+    color: COLOR.gray,
+  });
+  page.drawText("Principal / School Authority:", {
+    x: 320,
+    y,
+    size: 8.5,
+    font: bold,
+    color: COLOR.gray,
+  });
+  y -= 26;
+
+  page.drawLine({
+    start: { x: 40, y },
+    end: { x: 250, y },
+    thickness: 0.8,
+    color: COLOR.gray,
+  });
+  page.drawLine({
+    start: { x: 320, y },
+    end: { x: 530, y },
+    thickness: 0.8,
+    color: COLOR.gray,
+  });
+  y -= 14;
+
+  page.drawText(data.homeroomTeacherName || "Homeroom Teacher", {
+    x: 40,
+    y,
+    size: 9.5,
+    font: bold,
+    color: COLOR.black,
+  });
+  page.drawText(data.principalName || "School Principal", {
+    x: 320,
+    y,
+    size: 9.5,
+    font: bold,
+    color: COLOR.black,
+  });
+  y -= 12;
+
+  page.drawText(`Date: ${dateText}`, {
+    x: 40,
+    y,
+    size: 8,
+    font,
+    color: COLOR.gray,
+  });
+  page.drawText(`Date: ${dateText}`, {
+    x: 320,
+    y,
+    size: 8,
+    font,
+    color: COLOR.gray,
+  });
+
+  drawFooter(page, font, `${data.school.name} — Cumulative Annual Report Card (Page 1 of ${data.layout === "TWO_SIDED" ? "2" : "1"})`);
+
+  // ══════════════════════════════════════════════════════════════
+  // BACK SIDE (TWO_SIDED LAYOUT)
+  // ══════════════════════════════════════════════════════════════
+  if (data.layout === "TWO_SIDED") {
+    const backPage = doc.addPage([PAGE.width, PAGE.height]);
+    let by = drawHeader(
+      backPage,
+      bold,
+      font,
+      data.school,
+      `Annual Report Card — Supplementary Notes & Breakdown`,
+    );
+
+    // Subject Breakdown if provided
+    if (data.backSideDetails?.subjects && data.backSideDetails.subjects.length > 0) {
+      backPage.drawText(
+        `SUBJECT ASSESSMENT DETAILS (${data.backSideDetails.recentTermName || "Latest Term"})`,
+        {
+          x: 40,
+          y: by,
+          size: 10,
+          font: bold,
+          color: COLOR.navy,
+        },
+      );
+      by -= 16;
+
+      const subCol = { name: 40, obtained: 300, total: 380, grade: 460 };
+      backPage.drawRectangle({
+        x: 40,
+        y: by - 4,
+        width: PAGE.width - 80,
+        height: 18,
+        color: COLOR.lightGray,
+      });
+      backPage.drawText("Subject", {
+        x: subCol.name + 6,
+        y: by,
+        size: 9,
+        font: bold,
+        color: COLOR.black,
+      });
+      backPage.drawText("Marks", {
+        x: subCol.obtained,
+        y: by,
+        size: 9,
+        font: bold,
+        color: COLOR.black,
+      });
+      backPage.drawText("Out of", {
+        x: subCol.total,
+        y: by,
+        size: 9,
+        font: bold,
+        color: COLOR.black,
+      });
+      backPage.drawText("Grade", {
+        x: subCol.grade,
+        y: by,
+        size: 9,
+        font: bold,
+        color: COLOR.black,
+      });
+      by -= 20;
+
+      for (const s of data.backSideDetails.subjects) {
+        backPage.drawText(s.subjectName, {
+          x: subCol.name + 6,
+          y: by,
+          size: 9,
+          font,
+          color: COLOR.black,
+        });
+        backPage.drawText(String(s.marksObtained), {
+          x: subCol.obtained,
+          y: by,
+          size: 9,
+          font,
+          color: COLOR.black,
+        });
+        backPage.drawText(String(s.totalMarks), {
+          x: subCol.total,
+          y: by,
+          size: 9,
+          font,
+          color: COLOR.black,
+        });
+        backPage.drawText(s.grade ?? "—", {
+          x: subCol.grade,
+          y: by,
+          size: 9,
+          font,
+          color: COLOR.black,
+        });
+        by -= 16;
+      }
+      by -= 15;
+    }
+
+    // Attendance Summary
+    if (data.backSideDetails?.attendanceSummary) {
+      const att = data.backSideDetails.attendanceSummary;
+      backPage.drawText("ANNUAL ATTENDANCE SUMMARY", {
+        x: 40,
+        y: by,
+        size: 10,
+        font: bold,
+        color: COLOR.navy,
+      });
+      by -= 16;
+
+      backPage.drawRectangle({
+        x: 40,
+        y: by - 36,
+        width: PAGE.width - 80,
+        height: 36,
+        color: rgb(0.97, 0.98, 0.99),
+        borderColor: rgb(0.85, 0.88, 0.93),
+        borderWidth: 0.8,
+      });
+
+      labelValue(backPage, font, bold, 55, by - 12, "Total Days", String(att.totalDays ?? "—"));
+      labelValue(backPage, font, bold, 180, by - 12, "Present", String(att.presentDays ?? "—"));
+      labelValue(backPage, font, bold, 300, by - 12, "Absent", String(att.absentDays ?? "—"));
+      labelValue(
+        backPage,
+        font,
+        bold,
+        420,
+        by - 12,
+        "Attendance Rate",
+        att.attendancePercentage != null ? `${att.attendancePercentage}%` : "—",
+      );
+
+      by -= 56;
+    }
+
+    // Teacher Comments
+    if (data.backSideDetails?.teacherComments) {
+      backPage.drawText("HOMEROOM TEACHER ANNUAL REMARKS", {
+        x: 40,
+        y: by,
+        size: 10,
+        font: bold,
+        color: COLOR.navy,
+      });
+      by -= 16;
+
+      backPage.drawRectangle({
+        x: 40,
+        y: by - 60,
+        width: PAGE.width - 80,
+        height: 60,
+        color: rgb(0.98, 0.98, 0.99),
+        borderColor: rgb(0.88, 0.9, 0.94),
+        borderWidth: 0.8,
+      });
+
+      backPage.drawText(data.backSideDetails.teacherComments, {
+        x: 52,
+        y: by - 18,
+        size: 9.5,
+        font,
+        color: rgb(0.15, 0.18, 0.25),
+        maxWidth: PAGE.width - 104,
+      });
+
+      by -= 80;
+    }
+
+    drawFooter(backPage, font, `${data.school.name} — Cumulative Annual Report Card (Page 2 of 2)`);
+  }
+
+  return Buffer.from(await doc.save());
+}
+
+// ── 7. Certificate of Recognition & Graduation ────────────────────────────────
+export interface CertificatePdfData {
+  school: SchoolHeader;
+  certificate: {
+    id: string;
+    type: "GRADUATION" | "RECOGNITION";
+    recipientType: "STUDENT" | "STAFF";
+    recipientName: string;
+    recipientIdNumber?: string | null;
+    recipientRole?: string | null;
+    className?: string | null;
+    academicYear?: string | null;
+    title: string;
+    reason?: string | null;
+    issueDate: Date | string;
+    layout?: "ONE_SIDED" | "TWO_SIDED";
+    signerName?: string | null;
+    signerTitle?: string | null;
+    homeroomTeacherName?: string | null;
+  };
+  backSideDetails?: {
+    academicSummary?: {
+      overallAverage?: number | null;
+      overallRank?: number | null;
+      classSize?: number | null;
+      termBreakdown?: {
+        termName: string;
+        percentage?: number | null;
+        rank?: number | null;
+      }[];
+    } | null;
+    extendedCitation?: string | null;
+    commendations?: {
+      date: string;
+      title: string;
+      points?: number;
+    }[];
+  };
+}
+
+export async function generateCertificatePdf(
+  data: CertificatePdfData,
+): Promise<Buffer> {
+  const { doc, font, bold } = await newDoc();
+  const timesFont = await doc.embedFont(StandardFonts.TimesRoman);
+  const timesBold = await doc.embedFont(StandardFonts.TimesRomanBold);
+  const timesItalic = await doc.embedFont(StandardFonts.TimesRomanItalic);
+
+  // Landscape A4 dimensions: 841.89 x 595.28
+  const width = PAGE.height;
+  const height = PAGE.width;
+
+  // ══════════════════════════════════════════════════════════════
+  // PAGE 1: FRONT SIDE CERTIFICATE
+  // ══════════════════════════════════════════════════════════════
+  const page = doc.addPage([width, height]);
+
+  // Background
+  page.drawRectangle({
+    x: 0,
+    y: 0,
+    width,
+    height,
+    color: rgb(0.99, 0.99, 0.98),
+  });
+
+  // Outer Border (Navy)
+  const outerMargin = 22;
+  page.drawRectangle({
+    x: outerMargin,
+    y: outerMargin,
+    width: width - outerMargin * 2,
+    height: height - outerMargin * 2,
+    borderColor: rgb(0.08, 0.16, 0.32),
+    borderWidth: 3.5,
+  });
+
+  // Inner Border (Gold)
+  const innerMargin = 28;
+  page.drawRectangle({
+    x: innerMargin,
+    y: innerMargin,
+    width: width - innerMargin * 2,
+    height: height - innerMargin * 2,
+    borderColor: rgb(0.85, 0.68, 0.22),
+    borderWidth: 1.2,
+  });
+
+  // Top Corner Accents
+  const cornerSize = 16;
+  const drawCorner = (cx: number, cy: number) => {
+    page.drawRectangle({
+      x: cx - 4,
+      y: cy - 4,
+      width: 8,
+      height: 8,
+      color: rgb(0.85, 0.68, 0.22),
+    });
+  };
+  drawCorner(innerMargin, innerMargin);
+  drawCorner(width - innerMargin, innerMargin);
+  drawCorner(innerMargin, height - innerMargin);
+  drawCorner(width - innerMargin, height - innerMargin);
+
+  // School Header
+  let cy = height - 75;
+  const schoolName = data.school.name.toUpperCase();
+  const schoolNameWidth = bold.widthOfTextAtSize(schoolName, 15);
+  page.drawText(schoolName, {
+    x: (width - schoolNameWidth) / 2,
+    y: cy,
+    size: 15,
+    font: bold,
+    color: rgb(0.08, 0.16, 0.32),
+  });
+  cy -= 16;
+
+  const schoolContact = [data.school.address, data.school.phone, data.school.email]
+    .filter(Boolean)
+    .join("  •  ");
+  if (schoolContact) {
+    const contactWidth = font.widthOfTextAtSize(schoolContact, 8);
+    page.drawText(schoolContact, {
+      x: (width - contactWidth) / 2,
+      y: cy,
+      size: 8,
+      font,
+      color: COLOR.gray,
+    });
+    cy -= 16;
+  }
+
+  // Decorative Golden Line
+  page.drawLine({
+    start: { x: width / 2 - 160, y: cy + 4 },
+    end: { x: width / 2 + 160, y: cy + 4 },
+    thickness: 1.2,
+    color: rgb(0.85, 0.68, 0.22),
+  });
+  cy -= 20;
+
+  // Certificate Type / Title
+  const isGraduation = data.certificate.type === "GRADUATION";
+  const certHeader = isGraduation
+    ? "CERTIFICATE OF GRADUATION"
+    : "CERTIFICATE OF RECOGNITION";
+  const headerWidth = timesBold.widthOfTextAtSize(certHeader, 14);
+  page.drawText(certHeader, {
+    x: (width - headerWidth) / 2,
+    y: cy,
+    size: 14,
+    font: timesBold,
+    color: rgb(0.72, 0.55, 0.15),
+  });
+  cy -= 24;
+
+  // Specific Title (e.g. "Academic Excellence Award")
+  const specificTitle = data.certificate.title.toUpperCase();
+  const titleWidth = bold.widthOfTextAtSize(specificTitle, 17);
+  page.drawText(specificTitle, {
+    x: (width - titleWidth) / 2,
+    y: cy,
+    size: 17,
+    font: bold,
+    color: rgb(0.08, 0.16, 0.32),
+  });
+  cy -= 28;
+
+  // "PROUDLY PRESENTED TO"
+  const presentText = "THIS CERTIFICATE IS PROUDLY PRESENTED TO";
+  const presentWidth = font.widthOfTextAtSize(presentText, 9.5);
+  page.drawText(presentText, {
+    x: (width - presentWidth) / 2,
+    y: cy,
+    size: 9.5,
+    font,
+    color: rgb(0.4, 0.45, 0.55),
+  });
+  cy -= 36;
+
+  // Recipient Name
+  const recipientName = data.certificate.recipientName;
+  const nameWidth = timesBold.widthOfTextAtSize(recipientName, 26);
+  page.drawText(recipientName, {
+    x: (width - nameWidth) / 2,
+    y: cy,
+    size: 26,
+    font: timesBold,
+    color: rgb(0.08, 0.16, 0.32),
+  });
+  cy -= 6;
+
+  // Underline beneath recipient name
+  const underLineWidth = Math.max(nameWidth + 60, 300);
+  page.drawLine({
+    start: { x: (width - underLineWidth) / 2, y: cy },
+    end: { x: (width + underLineWidth) / 2, y: cy },
+    thickness: 1,
+    color: rgb(0.85, 0.68, 0.22),
+  });
+  cy -= 22;
+
+  // Recipient Subtitle (Class, Role, or ID)
+  const subInfo = [
+    data.certificate.className ? `Class: ${data.certificate.className}` : null,
+    data.certificate.recipientRole ? `Role: ${data.certificate.recipientRole}` : null,
+    data.certificate.recipientIdNumber ? `ID: ${data.certificate.recipientIdNumber}` : null,
+    data.certificate.academicYear ? `Academic Year: ${data.certificate.academicYear}` : null,
+  ]
+    .filter(Boolean)
+    .join("  |  ");
+
+  if (subInfo) {
+    const subWidth = font.widthOfTextAtSize(subInfo, 9);
+    page.drawText(subInfo, {
+      x: (width - subWidth) / 2,
+      y: cy,
+      size: 9,
+      font,
+      color: COLOR.gray,
+    });
+    cy -= 22;
+  }
+
+  // Reason / Citation Paragraph
+  const defaultReason = isGraduation
+    ? `For successfully meeting and exceeding all academic curriculum requirements and demonstrating outstanding character, dedication, and scholarship throughout the academic year.`
+    : `In sincere recognition of exemplary performance, noteworthy leadership, and valuable contributions to our school community.`;
+  const reasonText = data.certificate.reason || defaultReason;
+
+  const citationWidth = timesItalic.widthOfTextAtSize(reasonText, 11);
+  if (citationWidth < width - 180) {
+    page.drawText(reasonText, {
+      x: (width - citationWidth) / 2,
+      y: cy,
+      size: 11,
+      font: timesItalic,
+      color: rgb(0.2, 0.22, 0.28),
+    });
+  } else {
+    page.drawText(reasonText, {
+      x: 90,
+      y: cy,
+      size: 10.5,
+      font: timesItalic,
+      color: rgb(0.2, 0.22, 0.28),
+      maxWidth: width - 180,
+    });
+  }
+
+  // Bottom Signatures & Seal
+  const sigY = 90;
+  const leftSigX = 90;
+  const rightSigX = width - 290;
+  const lineLen = 200;
+
+  // Left Signer Line
+  page.drawLine({
+    start: { x: leftSigX, y: sigY },
+    end: { x: leftSigX + lineLen, y: sigY },
+    thickness: 1,
+    color: rgb(0.3, 0.35, 0.45),
+  });
+  page.drawText(data.certificate.homeroomTeacherName || data.certificate.signerName || "Authorized Signatory", {
+    x: leftSigX + 10,
+    y: sigY - 14,
+    size: 9.5,
+    font: bold,
+    color: rgb(0.1, 0.15, 0.25),
+  });
+  page.drawText(data.certificate.homeroomTeacherName ? "Class Teacher / Homeroom" : "Department Head / Signatory", {
+    x: leftSigX + 10,
+    y: sigY - 26,
+    size: 8,
+    font,
+    color: COLOR.gray,
+  });
+
+  // Right Signer Line
+  page.drawLine({
+    start: { x: rightSigX, y: sigY },
+    end: { x: rightSigX + lineLen, y: sigY },
+    thickness: 1,
+    color: rgb(0.3, 0.35, 0.45),
+  });
+  page.drawText(data.certificate.signerName || "School Principal", {
+    x: rightSigX + 10,
+    y: sigY - 14,
+    size: 9.5,
+    font: bold,
+    color: rgb(0.1, 0.15, 0.25),
+  });
+  page.drawText(data.certificate.signerTitle || "Head of School / Director", {
+    x: rightSigX + 10,
+    y: sigY - 26,
+    size: 8,
+    font,
+    color: COLOR.gray,
+  });
+
+  // Center Seal Emblem
+  const sealCenterX = width / 2;
+  const sealY = sigY - 10;
+  page.drawCircle({
+    x: sealCenterX,
+    y: sealY,
+    size: 24,
+    color: rgb(0.96, 0.92, 0.8),
+    borderColor: rgb(0.85, 0.68, 0.22),
+    borderWidth: 1.5,
+  });
+  page.drawText("OFFICIAL", {
+    x: sealCenterX - 14,
+    y: sealY + 2,
+    size: 6,
+    font: bold,
+    color: rgb(0.65, 0.48, 0.12),
+  });
+  page.drawText("SEAL", {
+    x: sealCenterX - 8,
+    y: sealY - 7,
+    size: 6,
+    font: bold,
+    color: rgb(0.65, 0.48, 0.12),
+  });
+
+  // Date & Certificate ID Footer
+  const issueDateStr = new Date(data.certificate.issueDate).toLocaleDateString("en-GB");
+  page.drawText(`Issued: ${issueDateStr}`, {
+    x: 40,
+    y: 35,
+    size: 7.5,
+    font,
+    color: COLOR.gray,
+  });
+  page.drawText(`Certificate ID: ${data.certificate.id.slice(0, 13).toUpperCase()}`, {
+    x: width - 200,
+    y: 35,
+    size: 7.5,
+    font,
+    color: COLOR.gray,
+  });
+
+  // ══════════════════════════════════════════════════════════════
+  // PAGE 2: BACK SIDE (TWO_SIDED LAYOUT)
+  // ══════════════════════════════════════════════════════════════
+  if (data.certificate.layout === "TWO_SIDED") {
+    const backPage = doc.addPage([width, height]);
+    backPage.drawRectangle({
+      x: 0,
+      y: 0,
+      width,
+      height,
+      color: rgb(0.99, 0.99, 0.98),
+    });
+
+    backPage.drawRectangle({
+      x: outerMargin,
+      y: outerMargin,
+      width: width - outerMargin * 2,
+      height: height - outerMargin * 2,
+      borderColor: rgb(0.8, 0.84, 0.9),
+      borderWidth: 1.5,
+    });
+
+    let bcy = height - 60;
+    backPage.drawText("CERTIFICATE ATTESTATION & OFFICIAL RECORD", {
+      x: 50,
+      y: bcy,
+      size: 13,
+      font: bold,
+      color: COLOR.navy,
+    });
+    bcy -= 16;
+    backPage.drawText(
+      `Permanent Record for ${data.certificate.recipientName}  •  ${data.school.name}`,
+      { x: 50, y: bcy, size: 9, font, color: COLOR.gray },
+    );
+    bcy -= 30;
+
+    // Academic Record for Graduation
+    if (data.backSideDetails?.academicSummary) {
+      const summ = data.backSideDetails.academicSummary;
+      backPage.drawText("ANNUAL ACADEMIC PERFORMANCE SUMMARY", {
+        x: 50,
+        y: bcy,
+        size: 10,
+        font: bold,
+        color: COLOR.navy,
+      });
+      bcy -= 16;
+
+      backPage.drawRectangle({
+        x: 50,
+        y: bcy - 40,
+        width: width - 100,
+        height: 40,
+        color: rgb(0.96, 0.97, 0.99),
+        borderColor: rgb(0.85, 0.88, 0.93),
+        borderWidth: 0.8,
+      });
+
+      const avgText = summ.overallAverage != null ? `${Number(summ.overallAverage).toFixed(1)}%` : "—";
+      const rankText = summ.overallRank != null ? `#${summ.overallRank}${summ.classSize ? ` of ${summ.classSize}` : ""}` : "—";
+
+      labelValue(backPage, font, bold, 70, bcy - 14, "Cumulative Average", avgText);
+      labelValue(backPage, font, bold, 260, bcy - 14, "Class Rank", rankText);
+      labelValue(backPage, font, bold, 450, bcy - 14, "Graduation Eligibility", "PASSED & CONFIRMED");
+
+      bcy -= 60;
+
+      if (summ.termBreakdown && summ.termBreakdown.length > 0) {
+        backPage.drawText("TERM PERFORMANCE RECORD", {
+          x: 50,
+          y: bcy,
+          size: 9.5,
+          font: bold,
+          color: COLOR.navy,
+        });
+        bcy -= 14;
+
+        for (const tb of summ.termBreakdown) {
+          backPage.drawText(`• ${tb.termName}: ${tb.percentage != null ? `${Number(tb.percentage).toFixed(1)}%` : "—"} (Rank: ${tb.rank != null ? `#${tb.rank}` : "—"})`, {
+            x: 60,
+            y: bcy,
+            size: 9,
+            font,
+            color: COLOR.black,
+          });
+          bcy -= 14;
+        }
+        bcy -= 16;
+      }
+    }
+
+    // Extended Citation / Commendations
+    if (data.backSideDetails?.extendedCitation) {
+      backPage.drawText("OFFICIAL CITATION & COMMENDATIONS", {
+        x: 50,
+        y: bcy,
+        size: 10,
+        font: bold,
+        color: COLOR.navy,
+      });
+      bcy -= 16;
+
+      backPage.drawRectangle({
+        x: 50,
+        y: bcy - 80,
+        width: width - 100,
+        height: 80,
+        color: rgb(0.98, 0.98, 0.99),
+        borderColor: rgb(0.88, 0.9, 0.94),
+        borderWidth: 0.8,
+      });
+
+      backPage.drawText(data.backSideDetails.extendedCitation, {
+        x: 65,
+        y: bcy - 20,
+        size: 9.5,
+        font,
+        color: rgb(0.2, 0.22, 0.28),
+        maxWidth: width - 130,
+      });
+      bcy -= 100;
+    }
+
+    // Verification Footer
+    backPage.drawText(
+      `This document is an authentic certified academic record issued by ${data.school.name}. Verification available upon request with Certificate ID ${data.certificate.id}.`,
+      {
+        x: 50,
+        y: 40,
+        size: 7.5,
+        font,
+        color: COLOR.gray,
+        maxWidth: width - 100,
+      },
+    );
+  }
+
+  return Buffer.from(await doc.save());
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 8. ANNUAL SCHEME OF WORK & CURRICULUM PLAN PDF (A4 Landscape)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface AnnualPlanPdfData {
+  school: {
+    name: string;
+    logo?: string | null;
+    address?: string | null;
+    phone?: string | null;
+    email?: string | null;
+  };
+  plan: {
+    id: string;
+    title: string;
+    scope: "TEACHER_SUBJECT" | "SCHOOL_WIDE";
+    academicYear: string;
+    status: string;
+    authorName: string;
+    authorRole?: string | null;
+    subjectName?: string | null;
+    className?: string | null;
+    gradeLevelName?: string | null;
+    columns: string[];
+    rows: any[];
+    reviewedByName?: string | null;
+    reviewNotes?: string | null;
+    submittedAt?: Date | string | null;
+    reviewedAt?: Date | string | null;
+    createdAt?: Date | string | null;
+  };
+}
+
+export async function generateAnnualPlanPdf(
+  data: AnnualPlanPdfData,
+): Promise<Buffer> {
+  await loadPdfLib();
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+
+  // A4 Landscape: 841.89 x 595.28 points
+  const width = 841.89;
+  const height = 595.28;
+  const margin = 40;
+  const contentWidth = width - margin * 2;
+
+  const rawColumns = Array.isArray(data.plan.columns) && data.plan.columns.length > 0
+    ? data.plan.columns
+    : ["Term", "Topic / Unit", "Learning Objectives", "Teaching Activities", "Resources", "Assessment", "Duration"];
+
+  const rawRows = Array.isArray(data.plan.rows) ? data.plan.rows : [];
+
+  // Determine column widths
+  const numCols = rawColumns.length;
+  const colWidth = contentWidth / numCols;
+
+  const rowsPerPage = 12;
+  const totalPages = Math.max(1, Math.ceil(rawRows.length / rowsPerPage));
+
+  for (let pageIdx = 0; pageIdx < totalPages; pageIdx++) {
+    const page = doc.addPage([width, height]);
+    let y = height - margin;
+
+    // Header on every page
+    // School Name & Header Title
+    page.drawText(data.school.name.toUpperCase(), {
+      x: margin,
+      y,
+      size: 14,
+      font: bold,
+      color: COLOR.navy,
+    });
+
+    const pageStr = `Page ${pageIdx + 1} of ${totalPages}`;
+    page.drawText(pageStr, {
+      x: width - margin - font.widthOfTextAtSize(pageStr, 8),
+      y,
+      size: 8,
+      font,
+      color: COLOR.gray,
+    });
+
+    y -= 14;
+
+    page.drawText(
+      `ANNUAL SCHEME OF WORK & CURRICULUM PLAN — ACADEMIC YEAR ${data.plan.academicYear}`,
+      {
+        x: margin,
+        y,
+        size: 9,
+        font: bold,
+        color: COLOR.gray,
+      },
+    );
+
+    y -= 18;
+
+    // Plan Title Banner (Only on page 1)
+    if (pageIdx === 0) {
+      page.drawRectangle({
+        x: margin,
+        y: y - 36,
+        width: contentWidth,
+        height: 36,
+        color: rgb(0.96, 0.97, 0.99),
+        borderColor: rgb(0.85, 0.88, 0.93),
+        borderWidth: 0.8,
+      });
+
+      page.drawText(data.plan.title, {
+        x: margin + 12,
+        y: y - 16,
+        size: 11,
+        font: bold,
+        color: COLOR.navy,
+        maxWidth: contentWidth - 160,
+      });
+
+      // Metadata items
+      const metaLine1 = [
+        data.plan.scope === "TEACHER_SUBJECT" ? `Subject: ${data.plan.subjectName || "—"}` : "Scope: School-Wide Plan",
+        data.plan.className ? `Class: ${data.plan.className}` : data.plan.gradeLevelName ? `Grade: ${data.plan.gradeLevelName}` : null,
+        `Teacher / Author: ${data.plan.authorName}`,
+      ]
+        .filter(Boolean)
+        .join("  |  ");
+
+      page.drawText(metaLine1, {
+        x: margin + 12,
+        y: y - 28,
+        size: 8,
+        font,
+        color: COLOR.gray,
+      });
+
+      // Status Badge
+      const statusText = data.plan.status;
+      const statusBg =
+        statusText === "APPROVED"
+          ? rgb(0.85, 0.95, 0.88)
+          : statusText === "SUBMITTED"
+            ? rgb(0.88, 0.92, 0.98)
+            : rgb(0.98, 0.92, 0.85);
+      const statusColor =
+        statusText === "APPROVED"
+          ? rgb(0.1, 0.5, 0.2)
+          : statusText === "SUBMITTED"
+            ? rgb(0.1, 0.3, 0.7)
+            : rgb(0.7, 0.4, 0.1);
+
+      page.drawRectangle({
+        x: width - margin - 100,
+        y: y - 26,
+        width: 88,
+        height: 18,
+        color: statusBg,
+        borderRadius: 4,
+      });
+
+      page.drawText(statusText, {
+        x: width - margin - 90,
+        y: y - 19,
+        size: 7.5,
+        font: bold,
+        color: statusColor,
+      });
+
+      y -= 46;
+    }
+
+    // ── Table Header ──
+    const tableHeaderHeight = 22;
+    page.drawRectangle({
+      x: margin,
+      y: y - tableHeaderHeight,
+      width: contentWidth,
+      height: tableHeaderHeight,
+      color: COLOR.navy,
+    });
+
+    rawColumns.forEach((colName, colIdx) => {
+      const cx = margin + colIdx * colWidth + 6;
+      page.drawText(String(colName).toUpperCase(), {
+        x: cx,
+        y: y - 15,
+        size: 7.5,
+        font: bold,
+        color: COLOR.white,
+        maxWidth: colWidth - 10,
+      });
+    });
+
+    y -= tableHeaderHeight;
+
+    // ── Table Rows for this page ──
+    const pageRows = rawRows.slice(
+      pageIdx * rowsPerPage,
+      (pageIdx + 1) * rowsPerPage,
+    );
+
+    const rowHeight = 22;
+
+    pageRows.forEach((row, rowIdx) => {
+      const isEven = rowIdx % 2 === 0;
+      page.drawRectangle({
+        x: margin,
+        y: y - rowHeight,
+        width: contentWidth,
+        height: rowHeight,
+        color: isEven ? COLOR.white : rgb(0.97, 0.98, 0.99),
+        borderColor: rgb(0.88, 0.9, 0.93),
+        borderWidth: 0.5,
+      });
+
+      rawColumns.forEach((colKey, colIdx) => {
+        let cellVal = "";
+        if (Array.isArray(row)) {
+          cellVal = row[colIdx] != null ? String(row[colIdx]) : "";
+        } else if (typeof row === "object" && row !== null) {
+          cellVal =
+            row[colKey] != null
+              ? String(row[colKey])
+              : row[colIdx] != null
+                ? String(row[colIdx])
+                : "";
+        }
+
+        const cx = margin + colIdx * colWidth + 6;
+        page.drawText(cellVal, {
+          x: cx,
+          y: y - 14,
+          size: 7.5,
+          font,
+          color: rgb(0.15, 0.18, 0.22),
+          maxWidth: colWidth - 10,
+        });
+      });
+
+      y -= rowHeight;
+    });
+
+    // ── Bottom Signatures (On final page) ──
+    if (pageIdx === totalPages - 1) {
+      const sigY = 60;
+
+      // Teacher / Author Signature Line
+      page.drawLine({
+        start: { x: margin + 30, y: sigY },
+        end: { x: margin + 220, y: sigY },
+        thickness: 0.8,
+        color: COLOR.gray,
+      });
+      page.drawText(`Author / Subject Teacher: ${data.plan.authorName}`, {
+        x: margin + 30,
+        y: sigY - 12,
+        size: 7.5,
+        font: bold,
+        color: COLOR.navy,
+      });
+      page.drawText("Signature & Date", {
+        x: margin + 30,
+        y: sigY - 22,
+        size: 6.5,
+        font,
+        color: COLOR.gray,
+      });
+
+      // Reviewer / Academic Principal Line
+      page.drawLine({
+        start: { x: width - margin - 220, y: sigY },
+        end: { x: width - margin - 30, y: sigY },
+        thickness: 0.8,
+        color: COLOR.gray,
+      });
+      page.drawText(
+        `Academic Supervisor / Principal: ${data.plan.reviewedByName || "Academic Reviewer"}`,
+        {
+          x: width - margin - 220,
+          y: sigY - 12,
+          size: 7.5,
+          font: bold,
+          color: COLOR.navy,
+        },
+      );
+      page.drawText(
+        data.plan.status === "APPROVED"
+          ? `APPROVED${data.plan.reviewedAt ? ` on ${new Date(data.plan.reviewedAt).toLocaleDateString()}` : ""}`
+          : "Review Stamp & Date",
+        {
+          x: width - margin - 220,
+          y: sigY - 22,
+          size: 6.5,
+          font,
+          color: COLOR.gray,
+        },
+      );
+    }
+  }
+
+  return Buffer.from(await doc.save());
+}
+
+

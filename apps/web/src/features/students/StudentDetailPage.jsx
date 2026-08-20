@@ -23,6 +23,13 @@ import {
   GraduationCap,
   RotateCw,
   CheckCircle2,
+  MapPin,
+  Heart,
+  Users,
+  Building,
+  FileText,
+  Shield,
+  Bus,
 } from 'lucide-react';
 import StatCard from '../../components/shared/StatCard';
 import { format } from 'date-fns';
@@ -32,6 +39,7 @@ export default function StudentDetailPage() {
   const { id } = useParams();
   const [previewCardOpen, setPreviewCardOpen] = useState(false);
   const [cardSide, setCardSide] = useState('front'); // 'front' | 'back'
+  const [cardLayout, setCardLayout] = useState('HORIZONTAL'); // 'HORIZONTAL' | 'VERTICAL'
   const [downloading, setDownloading] = useState(false);
 
   const { data: user, isLoading } = useQuery({
@@ -69,16 +77,14 @@ export default function StudentDetailPage() {
     }
   };
 
-  const handlePrintCard = () => {
-    window.print();
-  };
-
   if (isLoading) return <PageLoader />;
   if (!user) return <div className="text-center text-gray-400 py-16">Student not found</div>;
 
-  const sp = user.studentProfile;
+  const sp = user.studentProfile || {};
   const currentYear = new Date().getFullYear();
   const academicSession = `${currentYear} - ${currentYear + 1}`;
+  const fullName = [user.firstName, user.middleName, user.lastName].filter(Boolean).join(' ');
+  const houseColor = sp.house?.colorHex || '#4F46E5';
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -111,22 +117,41 @@ export default function StudentDetailPage() {
       </div>
 
       {/* ── Profile Header Card ────────────────────────────────────────────── */}
-      <div className="card p-6 flex flex-col sm:flex-row gap-6 items-start bg-white border border-gray-200 shadow-xs">
-        <Avatar name={`${user.firstName} ${user.lastName}`} src={user.avatar} size="xl" className="shadow-xs" />
+      <div className="card p-6 flex flex-col sm:flex-row gap-6 items-start bg-white border border-gray-200 shadow-xs relative overflow-hidden">
+        {sp.house && (
+          <div
+            className="absolute top-0 left-0 right-0 h-2"
+            style={{ backgroundColor: houseColor }}
+          />
+        )}
+
+        <Avatar name={fullName} src={user.avatar} size="xl" className="shadow-xs" />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3 flex-wrap mb-1">
             <h1 className="text-2xl font-black text-gray-900 tracking-tight">
-              {user.firstName} {user.lastName}
+              {fullName}
             </h1>
-            <Badge variant={user.isActive ? 'green' : 'red'}>
-              {user.isActive ? 'Active Account' : 'Inactive'}
-            </Badge>
+            {sp.status === 'ARCHIVE' ? (
+              <Badge variant="purple">Archived Student</Badge>
+            ) : sp.status === 'INACTIVE' || !user.isActive ? (
+              <Badge variant="red">Inactive</Badge>
+            ) : (
+              <Badge variant="green">Active Enrolled</Badge>
+            )}
           </div>
-          <p className="text-gray-500 font-mono text-xs font-bold bg-gray-100 px-2 py-0.5 rounded border border-gray-200 inline-block">
-            {sp?.admissionNumber || 'No Admission Number'}
-          </p>
 
-          <div className="flex flex-wrap gap-4 mt-3 text-xs text-gray-500">
+          <div className="flex items-center gap-2 flex-wrap mb-3">
+            <span className="text-gray-600 font-mono text-xs font-bold bg-gray-100 px-2 py-0.5 rounded border border-gray-200">
+              Adm: {sp.admissionNumber || '—'}
+            </span>
+            {sp.rollNumber && (
+              <span className="text-gray-600 font-mono text-xs font-bold bg-gray-100 px-2 py-0.5 rounded border border-gray-200">
+                Roll: {sp.rollNumber}
+              </span>
+            )}
+          </div>
+
+          <div className="flex flex-wrap gap-4 text-xs text-gray-500">
             <span className="flex items-center gap-1">
               <Mail className="w-3.5 h-3.5 text-gray-400" />
               {user.email}
@@ -143,16 +168,43 @@ export default function StudentDetailPage() {
                 {format(new Date(user.dateOfBirth), 'dd MMM yyyy')}
               </span>
             )}
+            {user.address && (
+              <span className="flex items-center gap-1">
+                <MapPin className="w-3.5 h-3.5 text-gray-400" />
+                {[user.address, user.city, user.state].filter(Boolean).join(', ')}
+              </span>
+            )}
           </div>
 
-          <div className="flex flex-wrap gap-2 mt-3">
-            {sp?.class && <Badge variant="blue">Class: {sp.class.name}</Badge>}
-            {sp?.class?.gradeLevel ? (
+          <div className="flex flex-wrap gap-2 mt-3.5">
+            {sp.class && <Badge variant="blue">Class: {sp.class.name}</Badge>}
+            {sp.class?.gradeLevel ? (
               <Badge variant="purple">{sp.class.gradeLevel.name}</Badge>
-            ) : sp?.gradeLevel ? (
+            ) : sp.gradeLevel ? (
               <Badge variant="purple">{sp.gradeLevel.name}</Badge>
             ) : null}
-            {sp?.rollNumber && <Badge variant="gray">Roll: {sp.rollNumber}</Badge>}
+            {sp.house && (
+              <span
+                className="px-2.5 py-0.5 rounded-full text-xs font-bold text-white shadow-2xs inline-flex items-center gap-1"
+                style={{ backgroundColor: houseColor }}
+              >
+                🏠 House: {sp.house.value}
+              </span>
+            )}
+            {sp.usesTransport && (
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 shadow-2xs inline-flex items-center gap-1">
+                <Bus className="w-3 h-3" /> Transport: {sp.busRoute?.name || 'Bus Rider'}
+              </span>
+            )}
+            {(sp.class?.programType || sp.programType) && (
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-100 text-indigo-800 shadow-2xs inline-flex items-center gap-1">
+                ⏱ Session: {sp.programTypeLabel || sp.class?.programTypeLabel || sp.class?.programType || sp.programType}
+              </span>
+            )}
+            {sp.category && <Badge variant="gray">Category: {sp.category.value}</Badge>}
+            {sp.feeCategory && <Badge variant="gray">Fee: {sp.feeCategory.value}</Badge>}
+            {sp.curriculum && <Badge variant="blue">Curriculum: {sp.curriculum.value}</Badge>}
+            {sp.bloodGroup && <Badge variant="red">Blood: {sp.bloodGroup}</Badge>}
             {user.gender && <Badge variant="gray">{user.gender === 'MALE' ? 'Male 👦' : 'Female 👧'}</Badge>}
           </div>
         </div>
@@ -186,6 +238,177 @@ export default function StudentDetailPage() {
         />
       </div>
 
+      {/* ── Information Cards Grid ─────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Personal & Medical Info */}
+        <div className="card bg-white border border-gray-200 p-5 space-y-3">
+          <h3 className="font-extrabold text-sm text-gray-900 flex items-center gap-2 border-b border-gray-100 pb-2">
+            <Heart className="w-4 h-4 text-red-500" /> Personal & Medical Details
+          </h3>
+          <div className="grid grid-cols-2 gap-y-2.5 text-xs">
+            <div>
+              <span className="text-gray-400 block text-[11px]">Full Name</span>
+              <span className="font-bold text-gray-800">{fullName}</span>
+            </div>
+            <div>
+              <span className="text-gray-400 block text-[11px]">Gender</span>
+              <span className="font-bold text-gray-800">{user.gender || '—'}</span>
+            </div>
+            <div>
+              <span className="text-gray-400 block text-[11px]">Date of Birth</span>
+              <span className="font-bold text-gray-800">
+                {user.dateOfBirth ? format(new Date(user.dateOfBirth), 'dd MMM yyyy') : '—'}
+              </span>
+            </div>
+            <div>
+              <span className="text-gray-400 block text-[11px]">Birth Place</span>
+              <span className="font-bold text-gray-800">{sp.birthPlace || user.birthPlace || '—'}</span>
+            </div>
+            <div>
+              <span className="text-gray-400 block text-[11px]">Nationality</span>
+              <span className="font-bold text-gray-800">{sp.nationality || user.nationality || '—'}</span>
+            </div>
+            <div>
+              <span className="text-gray-400 block text-[11px]">Blood Group</span>
+              <span className="font-bold text-gray-800">{sp.bloodGroup || '—'}</span>
+            </div>
+            <div className="col-span-2">
+              <span className="text-gray-400 block text-[11px]">Residential Address</span>
+              <span className="font-medium text-gray-800">
+                {[user.address, user.city, user.state, user.pincode].filter(Boolean).join(', ') || '—'}
+              </span>
+            </div>
+            {sp.medicalNotes && (
+              <div className="col-span-2 bg-amber-50 p-2.5 rounded-lg border border-amber-200 text-amber-800 text-[11px]">
+                <strong>Medical Notes:</strong> {sp.medicalNotes}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Classification & Admissions */}
+        <div className="card bg-white border border-gray-200 p-5 space-y-3">
+          <h3 className="font-extrabold text-sm text-gray-900 flex items-center gap-2 border-b border-gray-100 pb-2">
+            <Building className="w-4 h-4 text-primary-600" /> Classification & Admissions
+          </h3>
+          <div className="grid grid-cols-2 gap-y-2.5 text-xs">
+            <div>
+              <span className="text-gray-400 block text-[11px]">Religion</span>
+              <span className="font-bold text-gray-800">{sp.religion?.value || '—'}</span>
+            </div>
+            <div>
+              <span className="text-gray-400 block text-[11px]">Category</span>
+              <span className="font-bold text-gray-800">{sp.category?.value || '—'}</span>
+            </div>
+            <div>
+              <span className="text-gray-400 block text-[11px]">Fee Category</span>
+              <span className="font-bold text-gray-800">{sp.feeCategory?.value || '—'}</span>
+            </div>
+            <div>
+              <span className="text-gray-400 block text-[11px]">House</span>
+              <span className="font-bold text-gray-800">{sp.house?.value || '—'}</span>
+            </div>
+            <div>
+              <span className="text-gray-400 block text-[11px]">Curriculum</span>
+              <span className="font-bold text-gray-800">{sp.curriculum?.value || '—'}</span>
+            </div>
+            <div>
+              <span className="text-gray-400 block text-[11px]">Admissions Source</span>
+              <span className="font-bold text-gray-800">{sp.source?.value || '—'}</span>
+            </div>
+            <div>
+              <span className="text-gray-400 block text-[11px]">Previous School</span>
+              <span className="font-bold text-gray-800">{sp.previousSchool?.value || '—'}</span>
+            </div>
+            <div>
+              <span className="text-gray-400 block text-[11px]">Previous Class / Year</span>
+              <span className="font-bold text-gray-800">{sp.previousClassYear || '—'}</span>
+            </div>
+            <div>
+              <span className="text-gray-400 block text-[11px]">Program / Session</span>
+              <span className="font-bold text-gray-800">
+                {sp.programTypeLabel || sp.class?.programTypeLabel || sp.class?.programType || sp.programType || 'Regular Day'}
+              </span>
+            </div>
+            <div>
+              <span className="text-gray-400 block text-[11px]">Transportation</span>
+              <span className="font-bold text-gray-800">
+                {sp.usesTransport ? `🚌 ${sp.busRoute?.name || 'Bus Rider'}` : '🚶 No Transport'}
+              </span>
+            </div>
+            {sp.reference && (
+              <div className="col-span-2">
+                <span className="text-gray-400 block text-[11px]">Reference / Referred By</span>
+                <span className="font-medium text-gray-800">{sp.reference}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Parents / Guardians Info */}
+        <div className="card bg-white border border-gray-200 p-5 space-y-3 col-span-1 md:col-span-2">
+          <h3 className="font-extrabold text-sm text-gray-900 flex items-center gap-2 border-b border-gray-100 pb-2">
+            <Users className="w-4 h-4 text-emerald-600" /> Parent / Guardian Information
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+            <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 space-y-1.5">
+              <h4 className="font-bold text-gray-900 text-xs">Father's Information</h4>
+              <p className="text-gray-700">
+                <strong className="text-gray-900">Name:</strong>{' '}
+                {[sp.fatherFirstName, sp.fatherMiddleName, sp.fatherLastName].filter(Boolean).join(' ') || '—'}
+              </p>
+              <p className="text-gray-700">
+                <strong className="text-gray-900">Mobile:</strong> {sp.fatherMobile || '—'}
+              </p>
+            </div>
+
+            <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 space-y-1.5">
+              <h4 className="font-bold text-gray-900 text-xs">Mother's Information</h4>
+              <p className="text-gray-700">
+                <strong className="text-gray-900">Name:</strong>{' '}
+                {[sp.motherFirstName, sp.motherMiddleName, sp.motherLastName].filter(Boolean).join(' ') || '—'}
+              </p>
+              <p className="text-gray-700">
+                <strong className="text-gray-900">Mobile:</strong> {sp.motherMobile || '—'}
+              </p>
+            </div>
+          </div>
+
+          {sp.landline && (
+            <p className="text-xs text-gray-600 pt-1">
+              <strong>Home Landline:</strong> {sp.landline}
+            </p>
+          )}
+
+          {sp.parentLinks?.length > 0 && (
+            <div className="pt-2 border-t border-gray-100">
+              <h4 className="font-bold text-xs text-gray-900 mb-2">Linked System Accounts</h4>
+              <div className="divide-y divide-gray-100">
+                {sp.parentLinks.map((link) => (
+                  <div key={link.id} className="py-2 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <Avatar
+                        name={`${link.parentProfile.user.firstName} ${link.parentProfile.user.lastName}`}
+                        size="sm"
+                      />
+                      <div>
+                        <p className="font-bold text-xs text-gray-900">
+                          {link.parentProfile.user.firstName} {link.parentProfile.user.lastName}
+                        </p>
+                        <p className="text-[11px] text-gray-500">
+                          {link.relation || 'Guardian'} · {link.parentProfile.user.email} · {link.parentProfile.user.phone || ''}
+                        </p>
+                      </div>
+                    </div>
+                    {link.isPrimary && <Badge variant="primary">Primary Contact</Badge>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* ── Exam Performance Chart ─────────────────────────────────────────── */}
       {results?.examResults?.length > 0 && (
         <div className="card bg-white border border-gray-200">
@@ -203,66 +426,7 @@ export default function StudentDetailPage() {
         </div>
       )}
 
-      {/* ── Parents / Guardians List ───────────────────────────────────────── */}
-      {sp?.parentLinks?.length > 0 && (
-        <div className="card bg-white border border-gray-200">
-          <div className="card-header border-b border-gray-100">
-            <h3 className="font-extrabold text-sm text-gray-900">Parent / Guardian Contacts</h3>
-          </div>
-          <div className="divide-y divide-gray-50">
-            {sp.parentLinks.map((link) => (
-              <div key={link.id} className="px-6 py-4 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <Avatar
-                    name={`${link.parentProfile.user.firstName} ${link.parentProfile.user.lastName}`}
-                    size="md"
-                  />
-                  <div>
-                    <p className="font-bold text-xs text-gray-900">
-                      {link.parentProfile.user.firstName} {link.parentProfile.user.lastName}
-                    </p>
-                    <p className="text-[11px] text-gray-500">
-                      {link.relation || 'Guardian'} · {link.parentProfile.user.email}
-                    </p>
-                  </div>
-                </div>
-                {link.isPrimary && <Badge variant="primary">Primary Contact</Badge>}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ── Recent Behaviour Log ───────────────────────────────────────────── */}
-      {behaviour?.recent?.length > 0 && (
-        <div className="card bg-white border border-gray-200">
-          <div className="card-header border-b border-gray-100 flex items-center justify-between">
-            <h3 className="font-extrabold text-sm text-gray-900">Recent Conduct & Discipline</h3>
-            <div className="flex gap-2">
-              <Badge variant="green">{behaviour.merits} merits</Badge>
-              <Badge variant="red">{behaviour.demerits} demerits</Badge>
-            </div>
-          </div>
-          <div className="divide-y divide-gray-50 text-xs">
-            {behaviour.recent.slice(0, 5).map((r) => (
-              <div key={r.id} className="px-6 py-3.5 flex items-center justify-between">
-                <div>
-                  <p className="font-bold text-gray-900">{r.title}</p>
-                  <p className="text-[11px] text-gray-400 mt-0.5">
-                    {r.reportedBy?.firstName} {r.reportedBy?.lastName} ·{' '}
-                    {format(new Date(r.date), 'dd MMM yyyy')}
-                  </p>
-                </div>
-                <Badge variant={['MERIT', 'COMMENDATION'].includes(r.type) ? 'green' : 'red'}>
-                  {r.type}
-                </Badge>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ── Interactive ID Card Preview & Print Modal ──────────────────────── */}
+      {/* ── Interactive ID Card Preview Modal ──────────────────────────────── */}
       <Modal
         open={previewCardOpen}
         onClose={() => setPreviewCardOpen(false)}
@@ -270,17 +434,17 @@ export default function StudentDetailPage() {
         size="md"
         footer={
           <>
-            <button className="btn-secondary" onClick={() => setPreviewCardOpen(false)}>
+            <button className="btn-secondary text-xs" onClick={() => setPreviewCardOpen(false)}>
               Close
             </button>
             <button
-              className="btn-secondary inline-flex items-center gap-1.5"
+              className="btn-secondary text-xs inline-flex items-center gap-1.5"
               onClick={() => setCardSide((s) => (s === 'front' ? 'back' : 'front'))}
             >
               <RotateCw className="w-3.5 h-3.5" /> Flip Card ({cardSide === 'front' ? 'View Back' : 'View Front'})
             </button>
             <button
-              className="btn-primary inline-flex items-center gap-1.5"
+              className="btn-primary text-xs inline-flex items-center gap-1.5"
               onClick={handleDownloadIdCard}
               disabled={downloading}
             >
@@ -291,135 +455,102 @@ export default function StudentDetailPage() {
         }
       >
         <div className="flex flex-col items-center justify-center p-4 space-y-4">
-          {/* Card Frame Container */}
           <div className="relative w-full max-w-[360px] aspect-[1.586] rounded-2xl shadow-xl border border-gray-200 overflow-hidden bg-white text-gray-900 transition-all duration-300">
             {cardSide === 'front' ? (
               /* ════════════ FRONT SIDE ════════════ */
               <div className="w-full h-full flex flex-col justify-between p-3.5 bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 text-white relative">
-                {/* Decorative background watermark */}
-                <div className="absolute -right-8 -bottom-8 w-36 h-36 rounded-full bg-primary-500/10 blur-2xl pointer-events-none" />
+                {sp.house && (
+                  <div
+                    className="absolute top-0 left-0 right-0 h-1.5"
+                    style={{ backgroundColor: houseColor }}
+                  />
+                )}
 
-                {/* Card Header */}
-                <div className="border-b border-slate-700/80 pb-2 flex items-center justify-between">
+                <div className="flex items-center justify-between border-b border-slate-700/60 pb-2">
                   <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg bg-amber-400/20 border border-amber-400/40 flex items-center justify-center text-amber-300 font-black text-xs">
-                      🎓
-                    </div>
+                    <GraduationCap className="w-5 h-5 text-primary-400" />
                     <div>
-                      <h4 className="font-extrabold text-[12px] text-white tracking-wide uppercase leading-tight">
-                        TimhirtHub Academy
+                      <h4 className="font-black text-xs tracking-tight text-white leading-tight">
+                        {user.school?.name || 'TIMHIRTHUB ACADEMY'}
                       </h4>
-                      <p className="text-[9px] font-bold text-amber-400 tracking-wider uppercase">
+                      <p className="text-[9px] uppercase tracking-widest text-primary-300 font-bold">
                         Student Identity Card
                       </p>
                     </div>
                   </div>
-                  <span className="text-[8px] font-mono font-bold bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded border border-slate-700">
-                    {academicSession}
-                  </span>
                 </div>
 
-                {/* Card Body Profile Area */}
-                <div className="flex items-center gap-3.5 my-auto">
-                  {/* Photo Frame */}
-                  <div className="w-20 h-24 rounded-xl border-2 border-amber-400/50 bg-slate-800/80 flex flex-col items-center justify-center overflow-hidden flex-shrink-0 shadow-inner">
-                    <Avatar
-                      name={`${user.firstName} ${user.lastName}`}
-                      src={user.avatar}
-                      className="w-14 h-14 text-base"
-                    />
-                    <span className="text-[7px] font-extrabold uppercase text-slate-400 mt-1">Official ID</span>
+                <div className="flex gap-3 items-center my-auto">
+                  <div className="w-16 h-18 rounded-xl bg-slate-800 border border-slate-700 flex flex-col items-center justify-center p-1 relative overflow-hidden shadow-inner">
+                    {user.avatar ? (
+                      <img src={user.avatar} alt="Avatar" className="w-full h-full object-cover rounded-lg" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center bg-primary-600/30 text-primary-200 font-black text-base rounded-lg">
+                        {user.firstName[0]}
+                        {user.lastName[0]}
+                      </div>
+                    )}
                   </div>
 
-                  {/* Student Details */}
-                  <div className="flex-1 min-w-0 space-y-1 text-left">
-                    <h3 className="font-black text-sm text-white truncate leading-tight">
-                      {user.firstName} {user.lastName}
-                    </h3>
-                    <div className="inline-block bg-primary-500/20 text-primary-300 text-[8px] font-extrabold px-1.5 py-0.2 rounded border border-primary-500/30 uppercase tracking-wider">
-                      Student
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[9px] text-slate-300 pt-1">
+                  <div className="flex-1 space-y-0.5">
+                    <h2 className="font-black text-sm text-white leading-tight">{fullName}</h2>
+                    <p className="font-mono text-[10px] text-amber-400 font-bold tracking-wide">
+                      ID: {sp.admissionNumber || 'STU-0000'}
+                    </p>
+                    <div className="grid grid-cols-2 gap-x-2 text-[10px] text-slate-300 pt-0.5">
                       <div>
-                        <span className="text-slate-500 block text-[7.5px] font-bold uppercase">Adm No</span>
-                        <span className="font-mono font-bold text-amber-300">{sp?.admissionNumber || '—'}</span>
+                        <span className="text-slate-400">Class:</span>{' '}
+                        <strong className="text-white">{sp.class?.name || '—'}</strong>
                       </div>
                       <div>
-                        <span className="text-slate-500 block text-[7.5px] font-bold uppercase">Class</span>
-                        <span className="font-bold text-white">{sp?.class?.name || '—'}</span>
+                        <span className="text-slate-400">Roll:</span>{' '}
+                        <strong className="text-white">{sp.rollNumber || '—'}</strong>
                       </div>
-                      <div>
-                        <span className="text-slate-500 block text-[7.5px] font-bold uppercase">Grade</span>
-                        <span className="font-bold text-white">{sp?.class?.gradeLevel?.name || sp?.gradeLevel?.name || '—'}</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-500 block text-[7.5px] font-bold uppercase">Gender</span>
-                        <span className="font-bold text-white">{user.gender === 'MALE' ? 'Male' : user.gender === 'FEMALE' ? 'Female' : '—'}</span>
-                      </div>
+                      {sp.bloodGroup && (
+                        <div>
+                          <span className="text-slate-400">Blood:</span>{' '}
+                          <strong className="text-red-400">{sp.bloodGroup}</strong>
+                        </div>
+                      )}
+                      {sp.house && (
+                        <div>
+                          <span className="text-slate-400">House:</span>{' '}
+                          <strong style={{ color: houseColor }}>{sp.house.value}</strong>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
 
-                {/* Card Footer Barcode Band */}
-                <div className="pt-2 border-t border-slate-700/80 flex items-center justify-between">
-                  <div className="flex items-center gap-0.5 opacity-80">
-                    {[3, 1, 2, 4, 1, 3, 2, 1, 4, 2, 3, 1, 2, 3, 1, 4, 2, 1].map((w, i) => (
-                      <div
-                        key={i}
-                        className="bg-slate-300 h-3 rounded-xs"
-                        style={{ width: `${w * 1.5}px` }}
-                      />
-                    ))}
-                  </div>
-                  <span className="text-[8px] font-mono font-bold text-slate-400">
-                    ID: {sp?.admissionNumber ?? id.slice(0, 8)}
-                  </span>
+                <div className="flex items-center justify-between pt-1 border-t border-slate-800 text-[9px] text-slate-400">
+                  <span className="font-mono text-[8px] tracking-wider text-slate-400">||||||||||||||||||||||||||</span>
+                  <span className="font-bold text-slate-300">SESSION: {academicSession}</span>
                 </div>
               </div>
             ) : (
               /* ════════════ BACK SIDE ════════════ */
-              <div className="w-full h-full flex flex-col justify-between p-3.5 bg-slate-900 text-white text-left">
-                {/* Back Top Banner */}
-                <div className="border-b border-slate-700 pb-1.5 flex items-center justify-between">
-                  <span className="text-[9px] font-extrabold text-amber-400 tracking-wider uppercase">
+              <div className="w-full h-full flex flex-col justify-between p-3.5 bg-slate-50 text-gray-800 text-[10px] relative">
+                <div className="border-b border-gray-200 pb-1 flex items-center justify-between">
+                  <span className="font-black text-[11px] text-primary-900 uppercase tracking-wider">
                     Terms & Instructions
                   </span>
-                  <span className="text-[8px] text-slate-400">Card Verification</span>
+                  <ShieldCheck className="w-4 h-4 text-primary-600" />
                 </div>
 
-                {/* Rules List */}
-                <div className="space-y-1 text-[8px] text-slate-300 leading-tight">
-                  <p>1. This card is valid only for the designated student and is non-transferable.</p>
-                  <p>2. Must be presented upon entry to classrooms, examinations, and campus library.</p>
-                  <p>3. If lost or stolen, report immediately to the school registrar.</p>
+                <div className="space-y-1 text-gray-600 text-[9px] my-auto">
+                  <p>1. This card is valid only for the academic period shown on front.</p>
+                  <p>2. Must be produced on request by authorized campus personnel.</p>
+                  <p>3. If lost or found, please return immediately to administration.</p>
+                  {sp.fatherMobile && <p className="font-bold text-gray-800">Emergency Tel: {sp.fatherMobile}</p>}
                 </div>
 
-                {/* Contact Box */}
-                <div className="p-2 rounded-lg bg-slate-800/80 border border-slate-700/80 text-[7.5px] text-slate-300 space-y-0.5">
-                  <p className="font-extrabold text-amber-300">If found, please return to:</p>
-                  <p>School Administration Office · Addis Ababa, Ethiopia</p>
-                  <p>Emergency Contact: {user.phone || '+251 911 000 000'}</p>
-                </div>
-
-                {/* Signature Line */}
-                <div className="flex items-end justify-between pt-1 border-t border-slate-700 text-[8px]">
-                  <div className="text-center">
-                    <div className="w-20 border-b border-slate-500 mb-0.5" />
-                    <span className="text-slate-400 text-[7px]">Student Signature</span>
-                  </div>
-                  <div className="text-center">
-                    <div className="w-24 border-b border-amber-400/80 mb-0.5" />
-                    <span className="text-amber-300 font-bold text-[7px]">Principal / Registrar</span>
-                  </div>
+                <div className="pt-2 border-t border-gray-200 flex items-center justify-between text-[9px] text-gray-500">
+                  <span>Authorized Signature</span>
+                  <div className="w-20 border-b border-gray-400 mb-1" />
                 </div>
               </div>
             )}
           </div>
-
-          <p className="text-xs text-gray-500 text-center">
-            Click <strong>Flip Card</strong> to view reverse side or <strong>Download PDF Card</strong> for print-ready CR80 file.
-          </p>
         </div>
       </Modal>
     </div>

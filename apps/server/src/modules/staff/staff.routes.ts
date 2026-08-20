@@ -56,16 +56,29 @@ router.get(
           select: {
             id: true,
             firstName: true,
+            middleName: true,
             lastName: true,
             role: true,
             email: true,
             phone: true,
             avatar: true,
+            gender: true,
+            dateOfBirth: true,
+            address: true,
+            nationality: true,
+            city: true,
+            state: true,
+            pincode: true,
+            birthPlace: true,
+            emergencyContact: true,
+            emergencyPhone: true,
             isActive: true,
             teacherProfile: {
               include: {
                 assignedClasses: { select: { id: true, name: true } },
                 gradeLevel: { select: { id: true, name: true } },
+                religion: { select: { id: true, value: true } },
+                house: { select: { id: true, value: true, colorHex: true } },
                 subjectTeachings: {
                   include: {
                     subject: { select: { name: true } },
@@ -75,7 +88,9 @@ router.get(
               },
             },
             adminProfile: {
-              select: { department: true, isSuperAdmin: true },
+              include: {
+                religion: { select: { id: true, value: true } },
+              },
             },
             parentProfile: {
               include: {
@@ -86,6 +101,7 @@ router.get(
                         user: {
                           select: {
                             firstName: true,
+                            middleName: true,
                             lastName: true,
                           },
                         },

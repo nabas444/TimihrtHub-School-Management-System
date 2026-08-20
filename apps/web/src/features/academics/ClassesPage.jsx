@@ -52,6 +52,7 @@ export default function ClassesPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterGradeLevel, setFilterGradeLevel] = useState("");
   const [filterSection, setFilterSection] = useState("");
+  const [filterProgramType, setFilterProgramType] = useState("");
 
   // Form State
   const [form, setForm] = useState({
@@ -64,6 +65,8 @@ export default function ClassesPage() {
       new Date().getFullYear() + "/" + (new Date().getFullYear() + 1),
     capacity: 40,
     room: "",
+    programType: "REGULAR",
+    programTypeLabel: "",
     autoGenerateName: true,
   });
 
@@ -167,6 +170,9 @@ export default function ClassesPage() {
         academicYear: d.academicYear,
         room: d.room || undefined,
         capacity: parseInt(d.capacity),
+        programType: d.programType || undefined,
+        programTypeLabel:
+          d.programType === "OTHER" ? d.programTypeLabel || undefined : undefined,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["classes"] });
@@ -187,6 +193,9 @@ export default function ClassesPage() {
         academicYear: d.academicYear,
         room: d.room || undefined,
         capacity: parseInt(d.capacity),
+        programType: d.programType || undefined,
+        programTypeLabel:
+          d.programType === "OTHER" ? d.programTypeLabel || undefined : undefined,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["classes"] });
@@ -220,6 +229,8 @@ export default function ClassesPage() {
         new Date().getFullYear() + "/" + (new Date().getFullYear() + 1),
       capacity: 40,
       room: "",
+      programType: "REGULAR",
+      programTypeLabel: "",
       autoGenerateName: true,
     });
   };
@@ -237,6 +248,8 @@ export default function ClassesPage() {
         new Date().getFullYear() + "/" + (new Date().getFullYear() + 1),
       capacity: 40,
       room: "",
+      programType: "REGULAR",
+      programTypeLabel: "",
       autoGenerateName: true,
     });
     setAddOpen(true);
@@ -256,6 +269,8 @@ export default function ClassesPage() {
       academicYear: klass.academicYear,
       capacity: klass.capacity,
       room: klass.room || "",
+      programType: klass.programType || "REGULAR",
+      programTypeLabel: klass.programTypeLabel || "",
       autoGenerateName: false,
     });
     setEditOpen(true);
@@ -273,6 +288,8 @@ export default function ClassesPage() {
   const filteredClasses = useMemo(() => {
     return (classes ?? []).filter((c) => {
       if (filterGradeLevel && c.gradeLevelId !== filterGradeLevel) return false;
+      if (filterProgramType && (c.programType || "REGULAR") !== filterProgramType)
+        return false;
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
         const matchName = c.name?.toLowerCase().includes(query);
@@ -288,7 +305,7 @@ export default function ClassesPage() {
       }
       return true;
     });
-  }, [classes, filterGradeLevel, filterSection, searchQuery]);
+  }, [classes, filterGradeLevel, filterSection, filterProgramType, searchQuery]);
 
   return (
     <div className="space-y-6">
@@ -335,6 +352,21 @@ export default function ClassesPage() {
             ))}
           </select>
 
+          {/* Program Type Filter */}
+          <select
+            className="input text-xs py-1.5 w-auto"
+            value={filterProgramType}
+            onChange={(e) => setFilterProgramType(e.target.value)}
+          >
+            <option value="">All Programs</option>
+            <option value="REGULAR">Regular Day</option>
+            <option value="SUMMER">Summer</option>
+            <option value="NIGHT">Night</option>
+            <option value="WEEKEND">Weekend</option>
+            <option value="EXTENSION">Extension</option>
+            <option value="OTHER">Other</option>
+          </select>
+
           {/* Section Filter */}
           <select
             className="input text-xs py-1.5 w-auto"
@@ -349,10 +381,11 @@ export default function ClassesPage() {
             ))}
           </select>
 
-          {(filterGradeLevel || filterSection || searchQuery) && (
+          {(filterGradeLevel || filterProgramType || filterSection || searchQuery) && (
             <button
               onClick={() => {
                 setFilterGradeLevel("");
+                setFilterProgramType("");
                 setFilterSection("");
                 setSearchQuery("");
               }}
@@ -401,6 +434,11 @@ export default function ClassesPage() {
                       )}
                       {sectionBadge && (
                         <Badge variant="purple">{sectionBadge}</Badge>
+                      )}
+                      {c.programType && c.programType !== "REGULAR" && (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200/70">
+                          {c.programTypeLabel || c.programType}
+                        </span>
                       )}
                     </div>
                     <div className="flex gap-1">
@@ -683,6 +721,37 @@ export default function ClassesPage() {
               />
             </div>
           </div>
+
+          {/* Program / Session Type */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 border-t border-gray-100">
+            <div>
+              <label className="label font-bold">Program / Session Type</label>
+              <select
+                className="input text-xs"
+                value={form.programType}
+                onChange={(e) => setForm((f) => ({ ...f, programType: e.target.value }))}
+              >
+                <option value="REGULAR">Regular Day School</option>
+                <option value="SUMMER">Summer Program / Camp</option>
+                <option value="NIGHT">Night / Evening School</option>
+                <option value="WEEKEND">Weekend Program</option>
+                <option value="EXTENSION">Extension Program</option>
+                <option value="OTHER">Other Custom Session</option>
+              </select>
+            </div>
+            {form.programType === "OTHER" && (
+              <div>
+                <label className="label font-bold">Custom Session Label *</label>
+                <input
+                  className="input text-xs"
+                  value={form.programTypeLabel}
+                  onChange={(e) => setForm((f) => ({ ...f, programTypeLabel: e.target.value }))}
+                  placeholder="e.g. Remedial Intensive"
+                  required
+                />
+              </div>
+            )}
+          </div>
         </div>
       </Modal>
 
@@ -845,6 +914,37 @@ export default function ClassesPage() {
               />
             </div>
           </div>
+
+          {/* Program / Session Type */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 border-t border-gray-100">
+            <div>
+              <label className="label font-bold">Program / Session Type</label>
+              <select
+                className="input text-xs"
+                value={form.programType}
+                onChange={(e) => setForm((f) => ({ ...f, programType: e.target.value }))}
+              >
+                <option value="REGULAR">Regular Day School</option>
+                <option value="SUMMER">Summer Program / Camp</option>
+                <option value="NIGHT">Night / Evening School</option>
+                <option value="WEEKEND">Weekend Program</option>
+                <option value="EXTENSION">Extension Program</option>
+                <option value="OTHER">Other Custom Session</option>
+              </select>
+            </div>
+            {form.programType === "OTHER" && (
+              <div>
+                <label className="label font-bold">Custom Session Label *</label>
+                <input
+                  className="input text-xs"
+                  value={form.programTypeLabel}
+                  onChange={(e) => setForm((f) => ({ ...f, programTypeLabel: e.target.value }))}
+                  placeholder="e.g. Remedial Intensive"
+                  required
+                />
+              </div>
+            )}
+          </div>
         </div>
       </Modal>
 
@@ -859,10 +959,15 @@ export default function ClassesPage() {
           <div className="space-y-5">
             <div className="flex justify-between items-center pb-2 border-b border-gray-100">
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="text-xl font-bold text-gray-900">{selectedClass.name}</h3>
                   {extractSectionName(selectedClass.name) && (
                     <Badge variant="purple">{extractSectionName(selectedClass.name)}</Badge>
+                  )}
+                  {selectedClass.programType && selectedClass.programType !== "REGULAR" && (
+                    <span className="px-2 py-0.5 rounded text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                      {selectedClass.programTypeLabel || selectedClass.programType}
+                    </span>
                   )}
                 </div>
                 <p className="text-xs text-gray-400 font-mono mt-0.5">

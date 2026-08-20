@@ -154,7 +154,26 @@ enum NotificationType {
   CHAT
   FEE
   MEETING
+  ANNUAL_PLAN
   GENERAL
+}
+
+enum AnnouncementPriority {
+  NORMAL
+  IMPORTANT
+  URGENT
+}
+
+enum AnnualPlanScope {
+  TEACHER_SUBJECT
+  SCHOOL_WIDE
+}
+
+enum AnnualPlanStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REVISION_REQUESTED
 }
 
 enum MeetingStatus {
@@ -172,6 +191,50 @@ enum DayOfWeek {
   FRIDAY
   SATURDAY
   SUNDAY
+}
+
+enum StudentStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVE
+}
+
+enum CertificateType {
+  GRADUATION
+  RECOGNITION
+}
+
+enum CertificateRecipientType {
+  STUDENT
+  STAFF
+}
+
+enum SupportProgramType {
+  FINANCIAL_AID
+  MEAL_SUPPORT
+  SCHOLARSHIP
+  OTHER
+}
+
+enum SupportEnrollmentStatus {
+  ACTIVE
+  SUSPENDED
+  ENDED
+}
+
+enum ProgramType {
+  REGULAR
+  SUMMER
+  NIGHT
+  WEEKEND
+  EXTENSION
+  OTHER
+}
+
+enum TutorialEnrollmentStatus {
+  ENROLLED
+  WAITLISTED
+  DROPPED
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -215,6 +278,11 @@ model School {
   gradeLevels   GradeLevel[]
   busRoutes     BusRoute[]
   settings      SchoolSettings?
+  lookupValues  LookupValue[]
+  certificates  Certificate[]
+  annualPlans   AnnualPlan[]
+  supportPrograms SupportProgram[]
+  tutorialSessions TutorialSession[]
 
   @@map("schools")
 }
@@ -284,23 +352,31 @@ model Payment {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model User {
-  id              String    @id @default(uuid())
-  schoolId        String
-  role            Role
-  email           String
-  password        String
-  firstName       String
-  lastName        String
-  phone           String?
-  avatar          String?
-  gender          Gender?
-  dateOfBirth     DateTime?
-  address         String?
-  isActive        Boolean   @default(true)
-  isEmailVerified Boolean   @default(false)
-  lastLoginAt     DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id               String    @id @default(uuid())
+  schoolId         String
+  role             Role
+  email            String
+  password         String
+  firstName        String
+  middleName       String?
+  lastName         String
+  phone            String?
+  avatar           String?
+  gender           Gender?
+  dateOfBirth      DateTime?
+  address          String?
+  nationality      String?
+  city             String?
+  state            String?
+  pincode          String?
+  birthPlace       String?
+  emergencyContact String?
+  emergencyPhone   String?
+  isActive         Boolean   @default(true)
+  isEmailVerified  Boolean   @default(false)
+  lastLoginAt      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   // Phase 5 (SMS Notification Channel): opt-in, not on by default, so a
   // parent must explicitly choose to receive absence/fee-due alerts by SMS
@@ -333,6 +409,17 @@ model User {
   meetingsAsTeacher Meeting[]      @relation("TeacherMeetings")
   meetingsAsParent  Meeting[]      @relation("ParentMeetings")
   uploadedFiles     File[]
+
+  // Certificates
+  receivedCertificates Certificate[] @relation("CertificateRecipient")
+  signedCertificates   Certificate[] @relation("CertificateSigner")
+
+  // Annual Plans
+  createdAnnualPlans  AnnualPlan[] @relation("AnnualPlanCreator")
+  reviewedAnnualPlans AnnualPlan[] @relation("AnnualPlanReviewer")
+
+  // Student Support
+  approvedSupportEnrollments StudentSupportEnrollment[] @relation("SupportEnrollmentApprover")
 
   school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
 
@@ -371,28 +458,71 @@ model PasswordReset {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model StudentProfile {
-  id              String    @id @default(uuid())
-  userId          String    @unique
-  admissionNumber String
-  rollNumber      String?
-  classId         String?
-  gradeLevelId    String?
-  bloodGroup      String?
-  medicalNotes    String?
-  enrolledAt      DateTime  @default(now())
-  graduatedAt     DateTime?
-  busRouteId      String?
+  id                String        @id @default(uuid())
+  userId            String        @unique
+  admissionNumber   String
+  rollNumber        String?
+  classId           String?
+  gradeLevelId      String?
+  bloodGroup        String?
+  medicalNotes      String?
+  enrolledAt        DateTime      @default(now())
+  graduatedAt       DateTime?
+  busRouteId        String?
+  usesTransport     Boolean?
+  programType       ProgramType?
+  programTypeLabel  String?
+  status            StudentStatus @default(ACTIVE)
 
-  user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  class         Class?              @relation(fields: [classId], references: [id])
-  gradeLevel    GradeLevel?         @relation(fields: [gradeLevelId], references: [id])
-  parentLinks   ParentStudentLink[]
-  busRoute      BusRoute?           @relation(fields: [busRouteId], references: [id])
-  feeInvoices   FeeInvoice[]
-  libraryIssues LibraryIssue[]
-  aiInsights    AiInsight[]
-  ExamResult    ExamResult[]
-  GradeReport   GradeReport[]
+  middleName        String?
+  fatherFirstName   String?
+  fatherMiddleName  String?
+  fatherLastName    String?
+  motherFirstName   String?
+  motherMiddleName  String?
+  motherLastName    String?
+  fatherMobile      String?
+  motherMobile      String?
+  landline          String?
+  nationality       String?
+  city              String?
+  state             String?
+  pincode           String?
+  birthPlace        String?
+  religionId        String?
+  categoryId        String?
+  feeCategoryId     String?
+  sourceId          String?
+  houseId           String?
+  curriculumId      String?
+  previousSchoolId  String?
+  previousClassYear String?
+  reference         String?
+
+  user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  class             Class?              @relation(fields: [classId], references: [id])
+  gradeLevel        GradeLevel?         @relation(fields: [gradeLevelId], references: [id])
+  parentLinks       ParentStudentLink[]
+  busRoute          BusRoute?           @relation(fields: [busRouteId], references: [id])
+  feeInvoices       FeeInvoice[]
+  libraryIssues     LibraryIssue[]
+  aiInsights        AiInsight[]
+  ExamResult        ExamResult[]
+  GradeReport       GradeReport[]
+
+  religion          LookupValue?        @relation("StudentReligion", fields: [religionId], references: [id])
+  category          LookupValue?        @relation("StudentCategory", fields: [categoryId], references: [id])
+  feeCategory       LookupValue?        @relation("StudentFeeCategory", fields: [feeCategoryId], references: [id])
+  source            LookupValue?        @relation("StudentSource", fields: [sourceId], references: [id])
+  house             LookupValue?        @relation("StudentHouse", fields: [houseId], references: [id])
+  curriculum        LookupValue?        @relation("StudentCurriculum", fields: [curriculumId], references: [id])
+  previousSchool    LookupValue?        @relation("StudentPreviousSchool", fields: [previousSchoolId], references: [id])
+
+  installmentPlans      InstallmentPlan[]
+  academicYearSummaries AcademicYearSummary[]
+  certificates          Certificate[]
+  supportEnrollments    StudentSupportEnrollment[]
+  tutorialEnrollments   TutorialEnrollment[]
 
   @@map("student_profiles")
 }
@@ -403,10 +533,14 @@ model TeacherProfile {
   employeeId       String
   qualification    String?
   specialization   String?
+  designation      String?
+  experienceYears  Int?
   joinedAt         DateTime @default(now())
   isClassTeacher   Boolean  @default(false)
   classTeacherOfId String?
   gradeLevelId     String?
+  religionId       String?
+  houseId          String?
 
   user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   // Single class this teacher is class-teacher of
@@ -417,15 +551,22 @@ model TeacherProfile {
   subjectTeachings SubjectTeaching[]
   leaveRequests    LeaveRequest[]
   payrollRecords   PayrollRecord[]
+  annualPlans      AnnualPlan[]
+  tutorialSessions TutorialSession[]
+
+  religion         LookupValue?      @relation("TeacherReligion", fields: [religionId], references: [id])
+  house            LookupValue?      @relation("TeacherHouse", fields: [houseId], references: [id])
 
   @@map("teacher_profiles")
 }
 
 model ParentProfile {
-  id         String  @id @default(uuid())
-  userId     String  @unique
-  occupation String?
-  relation   String? // Father | Mother | Guardian
+  id           String              @id @default(uuid())
+  userId       String              @unique
+  occupation   String?
+  relation     String? // Father | Mother | Guardian
+  annualIncome String?
+  education    String?
 
   user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   studentLinks ParentStudentLink[]
@@ -434,13 +575,17 @@ model ParentProfile {
 }
 
 model AdminProfile {
-  id           String  @id @default(uuid())
-  userId       String  @unique
+  id           String       @id @default(uuid())
+  userId       String       @unique
   employeeId   String?
   department   String?
-  isSuperAdmin Boolean @default(false)
+  designation  String?
+  joinedAt     DateTime     @default(now())
+  isSuperAdmin Boolean      @default(false)
+  religionId   String?
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  religion     LookupValue? @relation("AdminReligion", fields: [religionId], references: [id])
 
   @@map("admin_profiles")
 }
@@ -471,26 +616,30 @@ model GradeLevel {
   level     Int // numeric order
   createdAt DateTime @default(now())
 
-  school   School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  classes  Class[]
-  subjects Subject[]
-  students StudentProfile[]
-  exams    Exam[]
-  teachers TeacherProfile[] @relation("TeacherGradeLevel")
+  school           School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  classes          Class[]
+  subjects         Subject[]
+  students         StudentProfile[]
+  exams            Exam[]
+  teachers         TeacherProfile[]  @relation("TeacherGradeLevel")
+  announcements    Announcement[]
+  tutorialSessions TutorialSession[]
 
   @@unique([schoolId, level])
   @@map("grade_levels")
 }
 
 model Class {
-  id           String   @id @default(uuid())
-  schoolId     String
-  gradeLevelId String
-  name         String // 10A, 10B, Form 3 Science, etc.
-  academicYear String
-  capacity     Int      @default(40)
-  room         String?
-  createdAt    DateTime @default(now())
+  id               String      @id @default(uuid())
+  schoolId         String
+  gradeLevelId     String
+  name             String // 10A, 10B, Form 3 Science, etc.
+  academicYear     String
+  capacity         Int         @default(40)
+  room             String?
+  programType      ProgramType @default(REGULAR)
+  programTypeLabel String?
+  createdAt        DateTime    @default(now())
 
   school            School             @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   gradeLevel        GradeLevel         @relation(fields: [gradeLevelId], references: [id])
@@ -504,6 +653,7 @@ model Class {
   announcements     Announcement[]
   chatRoom          ChatRoom?          @relation("ClassChatRoom")
   exams             Exam[]
+  tutorialSessions  TutorialSession[]
 
   @@unique([schoolId, name, academicYear])
   @@map("classes")
@@ -539,11 +689,13 @@ model Subject {
   isCore       Boolean  @default(true)
   createdAt    DateTime @default(now())
 
-  school      School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  gradeLevel  GradeLevel?       @relation(fields: [gradeLevelId], references: [id], onDelete: SetNull)
-  teachings   SubjectTeaching[]
-  assignments Assignment[]
-  exams       Exam[]
+  school           School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  gradeLevel       GradeLevel?       @relation(fields: [gradeLevelId], references: [id], onDelete: SetNull)
+  teachings        SubjectTeaching[]
+  assignments      Assignment[]
+  exams            Exam[]
+  annualPlans      AnnualPlan[]
+  tutorialSessions TutorialSession[]
 
   @@unique([schoolId, code])
   @@map("subjects")
@@ -847,23 +999,27 @@ model MessageReaction {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Announcement {
-  id          String             @id @default(uuid())
+  id          String               @id @default(uuid())
   schoolId    String
   authorId    String
-  classId     String? // if target = CLASS
+  classId     String? // if target = CLASS (single class legacy / primary)
+  classIds    String[]             @default([]) // multi-class targeting
+  gradeLevelId String?             // if target = GRADE_LEVEL or for cascading
   title       String
   content     String
-  target      AnnouncementTarget @default(ALL)
-  isPinned    Boolean            @default(false)
-  attachments String[]           @default([])
+  target      AnnouncementTarget   @default(ALL)
+  priority    AnnouncementPriority @default(NORMAL)
+  isPinned    Boolean              @default(false)
+  attachments String[]             @default([])
   publishedAt DateTime?
   expiresAt   DateTime?
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
 
-  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  author User   @relation("AnnouncementAuthor", fields: [authorId], references: [id])
-  class  Class? @relation(fields: [classId], references: [id])
+  school     School      @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  author     User        @relation("AnnouncementAuthor", fields: [authorId], references: [id])
+  class      Class?      @relation(fields: [classId], references: [id])
+  gradeLevel GradeLevel? @relation(fields: [gradeLevelId], references: [id])
 
   @@index([schoolId, publishedAt])
   @@map("announcements")
@@ -918,41 +1074,109 @@ model FeeTemplate {
 }
 
 model FeeInvoice {
-  id               String    @id @default(uuid())
+  id               String            @id @default(uuid())
   schoolId         String
   studentProfileId String
   title            String
-  type             FeeType   @default(TUITION)
+  type             FeeType           @default(TUITION)
   amount           Float
-  paidAmount       Float     @default(0)
-  discount         Float     @default(0)
+  paidAmount       Float             @default(0)
+  discount         Float             @default(0)
+  discountType     String            @default("AMOUNT") // "AMOUNT" | "PERCENT"
+  taxRate          Float             @default(0) // percent
+  taxAmount        Float             @default(0) // computed tax amount
   dueDate          DateTime
-  status           FeeStatus @default(PENDING)
+  status           FeeStatus         @default(PENDING)
   notes            String?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 
-  school         School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  studentProfile StudentProfile @relation(fields: [studentProfileId], references: [id])
-  feePayments    FeePayment[]
+  school           School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  studentProfile   StudentProfile    @relation(fields: [studentProfileId], references: [id])
+  feePayments      FeePayment[]
+  installmentPlans InstallmentPlan[]
 
   @@index([schoolId, status])
   @@map("fee_invoices")
 }
 
 model FeePayment {
-  id              String   @id @default(uuid())
-  invoiceId       String
-  amount          Float
-  method          String // CASH | BANK_TRANSFER | STRIPE | MPESA
-  reference       String?
-  stripePaymentId String?
-  paidAt          DateTime @default(now())
-  receipt         String?
+  id                 String   @id @default(uuid())
+  invoiceId          String
+  amount             Float
+  method             String // CASH | BANK_TRANSFER | STRIPE | MPESA
+  reference          String?
+  stripePaymentId    String?
+  paidAt             DateTime @default(now())
+  receipt            String?
+  provisionalReceipt String? // draft/pre-receipt reference before final save
+  receiptCopies      Int      @default(1) // 1 = single receipt, 2 = double (school + parent)
 
-  invoice FeeInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoice            FeeInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
   @@map("fee_payments")
+}
+
+model InstallmentPlan {
+  id               String   @id @default(uuid())
+  studentProfileId String
+  invoiceId        String?
+  totalAmount      Float
+  numInstallments  Int
+  taxRate          Float    @default(0)
+  discount         Float    @default(0)
+  createdAt        DateTime @default(now())
+
+  studentProfile   StudentProfile @relation(fields: [studentProfileId], references: [id])
+  invoice          FeeInvoice?    @relation(fields: [invoiceId], references: [id])
+  installments     Installment[]
+
+  @@map("installment_plans")
+}
+
+model Installment {
+  id             String    @id @default(uuid())
+  planId         String
+  installmentNo  Int
+  dueDate        DateTime
+  amount         Float
+  tax            Float     @default(0)
+  total          Float
+  payDate        DateTime?
+  payAmount      Float?
+  receiptNo      String?
+  noCarryForward Boolean   @default(false)
+
+  plan           InstallmentPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@index([planId])
+  @@map("installments")
+}
+
+model LookupValue {
+  id       String  @id @default(uuid())
+  schoolId String
+  type     String // "RELIGION" | "CATEGORY" | "FEE_CATEGORY" | "SOURCE" | "HOUSE" | "CURRICULUM" | "PREVIOUS_SCHOOL"
+  value    String
+  colorHex String? // For HOUSE strip color or badge tags
+  isActive Boolean @default(true)
+
+  school   School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  studentReligions       StudentProfile[] @relation("StudentReligion")
+  studentCategories      StudentProfile[] @relation("StudentCategory")
+  studentFeeCategories   StudentProfile[] @relation("StudentFeeCategory")
+  studentSources         StudentProfile[] @relation("StudentSource")
+  studentHouses          StudentProfile[] @relation("StudentHouse")
+  studentCurriculums     StudentProfile[] @relation("StudentCurriculum")
+  studentPreviousSchools StudentProfile[] @relation("StudentPreviousSchool")
+
+  teacherReligions       TeacherProfile[] @relation("TeacherReligion")
+  teacherHouses          TeacherProfile[] @relation("TeacherHouse")
+  adminReligions         AdminProfile[]   @relation("AdminReligion")
+
+  @@index([schoolId, type])
+  @@map("lookup_values")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -960,20 +1184,29 @@ model FeePayment {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model LibraryBook {
-  id        String     @id @default(uuid())
-  schoolId  String
-  title     String
-  author    String
-  isbn      String?
-  category  String
-  publisher String?
-  year      Int?
-  copies    Int        @default(1)
-  available Int        @default(1)
-  status    BookStatus @default(AVAILABLE)
-  coverUrl  String?
-  location  String? // shelf reference
-  createdAt DateTime   @default(now())
+  id                String     @id @default(uuid())
+  schoolId          String
+  title             String
+  author            String
+  isbn              String?
+  edition           String?
+  language          String?
+  description       String?
+  category          String
+  tags              String[]   @default([])
+  publisher         String?
+  year              Int?
+  copies            Int        @default(1)
+  available         Int        @default(1)
+  condition         String?
+  acquisitionSource String?
+  price             Float?
+  digitalCopyUrl    String?
+  barcodeNumber     String?
+  status            BookStatus @default(AVAILABLE)
+  coverUrl          String?
+  location          String? // shelf reference
+  createdAt         DateTime   @default(now())
 
   school School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   issues LibraryIssue[]
@@ -1150,3 +1383,203 @@ model BusRoute {
 
 // Relations added to ExamResult
 // (added inline above: ExamResult -> StudentProfile)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ACADEMIC YEAR SUMMARIES & CERTIFICATES
+// ─────────────────────────────────────────────────────────────────────────────
+
+model AcademicYearSummary {
+  id                String   @id @default(uuid())
+  studentProfileId  String
+  academicYear      String
+  classId           String
+  overallAverage    Float?
+  overallRank       Int?
+  termBreakdown     Json     // [{ termId, termName, gpa, percentage, rank }, ...] — snapshot at generation time
+  isPassing         Boolean  @default(false)
+  isPublished       Boolean  @default(false)
+  publishedAt       DateTime?
+  generatedAt       DateTime @default(now())
+
+  studentProfile StudentProfile @relation(fields: [studentProfileId], references: [id])
+
+  @@unique([studentProfileId, academicYear])
+  @@map("academic_year_summaries")
+}
+
+model Certificate {
+  id               String                    @id @default(uuid())
+  schoolId         String
+  type             CertificateType
+  recipientType    CertificateRecipientType
+  studentProfileId String?                   // set when recipientType = STUDENT
+  userId           String?                   // set when recipientType = STAFF (TEACHER/ADMIN/etc. user)
+  academicYear     String?                   // relevant mainly for GRADUATION
+  title            String                    // e.g. "Certificate of Academic Excellence"
+  reason           String?                   // free text: criteria/achievement description
+  issueDate        DateTime                  @default(now())
+  layout           String                    @default("ONE_SIDED") // "ONE_SIDED" | "TWO_SIDED"
+  signedById       String?                   // e.g. principal/admin issuing signature
+  createdAt        DateTime                  @default(now())
+
+  school         School          @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  studentProfile StudentProfile? @relation(fields: [studentProfileId], references: [id])
+  user           User?           @relation("CertificateRecipient", fields: [userId], references: [id])
+  signedBy       User?           @relation("CertificateSigner", fields: [signedById], references: [id])
+
+  @@index([schoolId, type])
+  @@map("certificates")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ANNUAL PLANS (Teacher Scheme of Work & School-wide Plans)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model AnnualPlan {
+  id               String            @id @default(uuid())
+  schoolId         String
+  scope            AnnualPlanScope
+  createdById      String            // User.id — the teacher or admin who authored it
+  teacherProfileId String?           // set when scope = TEACHER_SUBJECT
+  subjectId        String?           // set when scope = TEACHER_SUBJECT
+  classId          String?           // optional — plan may be class-specific or apply across all classes for that subject
+  gradeLevelId     String?           // for SCHOOL_WIDE plans scoped to a grade level, optional
+  academicYear     String
+  title            String
+  columns          Json              // array of column header labels, e.g. ["Term","Topic","Objectives","Activities","Resources","Assessment","Weeks"]
+  rows             Json              // array of row objects/arrays matching the columns
+  status           AnnualPlanStatus  @default(DRAFT)
+  submittedAt      DateTime?
+  reviewedById     String?
+  reviewedAt       DateTime?
+  reviewNotes      String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  school         School          @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  createdBy      User            @relation("AnnualPlanCreator", fields: [createdById], references: [id])
+  teacherProfile TeacherProfile? @relation(fields: [teacherProfileId], references: [id])
+  subject        Subject?        @relation(fields: [subjectId], references: [id])
+  reviewedBy     User?           @relation("AnnualPlanReviewer", fields: [reviewedById], references: [id])
+
+  @@index([schoolId, academicYear])
+  @@map("annual_plans")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STUDENT SUPPORT PROGRAMS & WELFARE
+// ─────────────────────────────────────────────────────────────────────────────
+
+model SupportProgram {
+  id            String             @id @default(uuid())
+  schoolId      String
+  type          SupportProgramType
+  name          String
+  description   String?
+  waiverPercent Float? // 0-100, for FINANCIAL_AID/SCHOLARSHIP types — % of tuition fees waived while active; null = no automatic fee effect
+  academicYear  String?
+  isActive      Boolean            @default(true)
+  createdAt     DateTime           @default(now())
+
+  school      School                     @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  enrollments StudentSupportEnrollment[]
+
+  @@index([schoolId, type])
+  @@map("support_programs")
+}
+
+model StudentSupportEnrollment {
+  id               String                  @id @default(uuid())
+  studentProfileId String
+  supportProgramId String
+  status           SupportEnrollmentStatus @default(ACTIVE)
+  startDate        DateTime                @default(now())
+  endDate          DateTime?
+  notes            String? // confidential — visibility restricted to admin/finance
+  approvedById     String // User.id, admin/finance who approved
+  createdAt        DateTime                @default(now())
+
+  studentProfile          StudentProfile           @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+  supportProgram          SupportProgram           @relation(fields: [supportProgramId], references: [id])
+  approvedBy              User                     @relation("SupportEnrollmentApprover", fields: [approvedById], references: [id])
+  mealDistributionRecords MealDistributionRecord[]
+
+  @@index([studentProfileId])
+  @@map("student_support_enrollments")
+}
+
+model MealDistributionRecord {
+  id                         String   @id @default(uuid())
+  studentSupportEnrollmentId String
+  date                       DateTime @db.Date
+  recordedById               String // User.id, staff who logged distribution
+  notes                      String?
+
+  enrollment StudentSupportEnrollment @relation(fields: [studentSupportEnrollmentId], references: [id], onDelete: Cascade)
+
+  @@unique([studentSupportEnrollmentId, date])
+  @@map("meal_distribution_records")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TUTORIALS & EXTRA LECTURE SESSIONS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model TutorialSession {
+  id               String      @id @default(uuid())
+  schoolId         String
+  title            String
+  subjectId        String?
+  classId          String? // optional — target single class or open across grade/subject
+  gradeLevelId     String?
+  teacherProfileId String
+  dayOfWeek        DayOfWeek? // set for recurring weekly sessions
+  specificDate     DateTime? // set for one-off sessions instead of a recurring day
+  startTime        String // "16:00"
+  endTime          String // "17:30"
+  location         String?
+  capacity         Int?
+  isRecurring      Boolean     @default(true)
+  academicYear     String
+  createdAt        DateTime    @default(now())
+
+  school         School                     @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  subject        Subject?                   @relation(fields: [subjectId], references: [id])
+  class          Class?                     @relation(fields: [classId], references: [id])
+  gradeLevel     GradeLevel?                @relation(fields: [gradeLevelId], references: [id])
+  teacherProfile TeacherProfile             @relation(fields: [teacherProfileId], references: [id])
+  enrollments    TutorialEnrollment[]
+  attendance     TutorialAttendanceRecord[]
+
+  @@index([schoolId, academicYear])
+  @@map("tutorial_sessions")
+}
+
+model TutorialEnrollment {
+  id                String                   @id @default(uuid())
+  tutorialSessionId String
+  studentProfileId  String
+  status            TutorialEnrollmentStatus @default(ENROLLED)
+  enrolledAt        DateTime                 @default(now())
+
+  tutorialSession TutorialSession @relation(fields: [tutorialSessionId], references: [id], onDelete: Cascade)
+  studentProfile  StudentProfile  @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([tutorialSessionId, studentProfileId])
+  @@map("tutorial_enrollments")
+}
+
+model TutorialAttendanceRecord {
+  id                String           @id @default(uuid())
+  tutorialSessionId String
+  studentProfileId  String
+  date              DateTime         @db.Date
+  status            AttendanceStatus @default(ABSENT)
+  markedById        String
+
+  tutorialSession TutorialSession @relation(fields: [tutorialSessionId], references: [id], onDelete: Cascade)
+
+  @@unique([tutorialSessionId, studentProfileId, date])
+  @@map("tutorial_attendance_records")
+}
+

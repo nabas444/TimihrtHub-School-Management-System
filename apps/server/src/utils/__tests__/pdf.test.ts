@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { PDFDocument } from 'pdf-lib';
+const { PDFDocument } = require('pdf-lib/dist/pdf-lib.js');
 import { generateAttendanceSheetPdf } from '../pdf';
 
 // Session-2 regression: a 60-student roster used to only render 24 students
