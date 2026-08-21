@@ -12,6 +12,8 @@ import {
   AllocationStatus,
   RequestStatus,
   PurchaseOrderStatus,
+  MaintenanceStatus,
+  DisposalReason,
   Role,
 } from "@prisma/client";
 import { db } from "../../config/database";
@@ -2547,5 +2549,667 @@ export async function getPurchaseOrderById(schoolId: string, id: string) {
   if (!po) throw new AppError("Purchase Order not found", 404);
   return po;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 11. MAINTENANCE TICKETS & WORKFLOWS
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface CreateMaintenanceTicketDTO {
+  itemId: string;
+  faultDescription: string;
+  serviceProvider?: string | null;
+  assignedStaffId?: string | null;
+  scheduledAt?: string | Date | null;
+  cost?: number;
+}
+
+export async function createMaintenanceTicket(
+  schoolId: string,
+  data: CreateMaintenanceTicketDTO,
+  reportedById: string,
+  req?: Request,
+) {
+  const item = await db.inventoryItem.findFirst({
+    where: { id: data.itemId, schoolId, isActive: true },
+  });
+  if (!item) throw new AppError("Inventory item not found", 404);
+
+  if (item.status === ItemLifecycleStatus.DISPOSED) {
+    throw new AppError("Cannot create maintenance ticket for a disposed item", 400);
+  }
+
+  const result = await db.$transaction(async (tx) => {
+    const maint = await tx.maintenanceRecord.create({
+      data: {
+        schoolId,
+        itemId: item.id,
+        reportedById,
+        assignedStaffId: data.assignedStaffId || null,
+        faultDescription: data.faultDescription.trim(),
+        serviceProvider: data.serviceProvider?.trim() || null,
+        scheduledAt: data.scheduledAt ? new Date(data.scheduledAt) : null,
+        cost: data.cost || 0,
+        status: "REPORTED",
+      },
+      include: {
+        item: true,
+        reportedBy: { select: { id: true, firstName: true, lastName: true } },
+        assignedStaff: { select: { id: true, firstName: true, lastName: true } },
+      },
+    });
+
+    await tx.inventoryItem.update({
+      where: { id: item.id },
+      data: {
+        status: ItemLifecycleStatus.UNDER_MAINTENANCE,
+        condition: ItemCondition.DAMAGED,
+      },
+    });
+
+    await recordMovement(
+      tx,
+      {
+        schoolId,
+        itemId: item.id,
+        type: MovementType.SENT_FOR_MAINTENANCE,
+        quantity: 1,
+        fromLocationId: item.currentLocationId,
+        toLocationId: item.currentLocationId,
+        performedById: reportedById,
+        relatedMaintenanceId: maint.id,
+        note: `Sent for maintenance: ${data.faultDescription}`,
+      },
+      req,
+    );
+
+    return maint;
+  });
+
+  return result;
+}
+
+export async function updateMaintenanceTicket(
+  schoolId: string,
+  id: string,
+  data: Partial<{
+    status: MaintenanceStatus;
+    assignedStaffId: string | null;
+    serviceProvider: string | null;
+    scheduledAt: string | Date | null;
+    cost: number;
+    faultDescription: string;
+    resolutionNotes: string | null;
+  }>,
+  performedById: string,
+  req?: Request,
+) {
+  const existing = await db.maintenanceRecord.findFirst({
+    where: { id, schoolId },
+  });
+  if (!existing) throw new AppError("Maintenance record not found", 404);
+
+  const updated = await db.maintenanceRecord.update({
+    where: { id },
+    data: {
+      ...(data.status !== undefined && { status: data.status }),
+      ...(data.assignedStaffId !== undefined && { assignedStaffId: data.assignedStaffId }),
+      ...(data.serviceProvider !== undefined && { serviceProvider: data.serviceProvider?.trim() || null }),
+      ...(data.scheduledAt !== undefined && {
+        scheduledAt: data.scheduledAt ? new Date(data.scheduledAt) : null,
+      }),
+      ...(data.cost !== undefined && { cost: data.cost }),
+      ...(data.faultDescription !== undefined && { faultDescription: data.faultDescription.trim() }),
+      ...(data.resolutionNotes !== undefined && { resolutionNotes: data.resolutionNotes?.trim() || null }),
+    },
+    include: {
+      item: true,
+      reportedBy: { select: { id: true, firstName: true, lastName: true } },
+      assignedStaff: { select: { id: true, firstName: true, lastName: true } },
+    },
+  });
+
+  recordAuditEvent({
+    schoolId,
+    actorId: performedById,
+    action: "INVENTORY_MAINTENANCE_UPDATED",
+    targetType: "MAINTENANCE_RECORD",
+    targetId: id,
+    metadata: data,
+    req,
+  }).catch(() => {});
+
+  return updated;
+}
+
+export async function resolveMaintenanceTicket(
+  schoolId: string,
+  id: string,
+  data: {
+    status: "COMPLETED" | "UNRESOLVABLE";
+    resolutionNotes?: string | null;
+    cost?: number;
+    conditionAfterRepair?: ItemCondition;
+    returnLocationId?: string | null;
+  },
+  resolvedById: string,
+  req?: Request,
+) {
+  const existing = await db.maintenanceRecord.findFirst({
+    where: { id, schoolId },
+    include: { item: true },
+  });
+  if (!existing) throw new AppError("Maintenance record not found", 404);
+
+  const isResolved = data.status === "COMPLETED";
+
+  const result = await db.$transaction(async (tx) => {
+    const updatedMaint = await tx.maintenanceRecord.update({
+      where: { id },
+      data: {
+        status: isResolved ? "COMPLETED" : "UNRESOLVABLE",
+        resolutionNotes: data.resolutionNotes?.trim() || null,
+        cost: data.cost !== undefined ? data.cost : existing.cost,
+        resolvedAt: new Date(),
+      },
+      include: {
+        item: true,
+        reportedBy: { select: { id: true, firstName: true, lastName: true } },
+      },
+    });
+
+    if (isResolved) {
+      // Restored to IN_STOCK
+      await tx.inventoryItem.update({
+        where: { id: existing.itemId },
+        data: {
+          status: ItemLifecycleStatus.IN_STOCK,
+          condition: data.conditionAfterRepair || ItemCondition.GOOD,
+          ...(data.returnLocationId && { currentLocationId: data.returnLocationId }),
+        },
+      });
+
+      await recordMovement(
+        tx,
+        {
+          schoolId,
+          itemId: existing.itemId,
+          type: MovementType.RETURNED_FROM_MAINTENANCE,
+          quantity: 1,
+          fromLocationId: existing.item.currentLocationId,
+          toLocationId: data.returnLocationId || existing.item.currentLocationId,
+          performedById: resolvedById,
+          relatedMaintenanceId: id,
+          note: `Maintenance completed: ${data.resolutionNotes || "Restored to working order"}`,
+        },
+        req,
+      );
+    } else {
+      // Unresolvable -> Marked as condemned/disposed candidate
+      await tx.inventoryItem.update({
+        where: { id: existing.itemId },
+        data: {
+          condition: ItemCondition.CONDEMNED,
+        },
+      });
+    }
+
+    return updatedMaint;
+  });
+
+  return result;
+}
+
+export async function getMaintenanceRecords(
+  schoolId: string,
+  params?: {
+    itemId?: string;
+    status?: MaintenanceStatus;
+    page?: number;
+    limit?: number;
+  },
+) {
+  const page = Math.max(1, params?.page || 1);
+  const limit = Math.min(100, Math.max(1, params?.limit || 20));
+  const skip = (page - 1) * limit;
+
+  const where: Prisma.MaintenanceRecordWhereInput = {
+    schoolId,
+    ...(params?.itemId && { itemId: params.itemId }),
+    ...(params?.status && { status: params.status }),
+  };
+
+  const [records, total] = await Promise.all([
+    db.maintenanceRecord.findMany({
+      where,
+      skip,
+      take: limit,
+      include: {
+        item: { select: { id: true, name: true, assetTagNumber: true, status: true, itemType: true } },
+        reportedBy: { select: { id: true, firstName: true, lastName: true } },
+        assignedStaff: { select: { id: true, firstName: true, lastName: true } },
+      },
+      orderBy: [{ createdAt: "desc" }],
+    }),
+    db.maintenanceRecord.count({ where }),
+  ]);
+
+  return { records, total, page, limit, totalPages: Math.ceil(total / limit) };
+}
+
+export async function getMaintenanceRecordById(schoolId: string, id: string) {
+  const record = await db.maintenanceRecord.findFirst({
+    where: { id, schoolId },
+    include: {
+      item: {
+        include: {
+          category: true,
+          currentLocation: true,
+        },
+      },
+      reportedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+      assignedStaff: { select: { id: true, firstName: true, lastName: true, email: true } },
+    },
+  });
+
+  if (!record) throw new AppError("Maintenance record not found", 404);
+  return record;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 12. DEPRECIATION & DISPOSAL MANAGEMENT
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function calculateItemDepreciation(item: {
+  purchaseCost?: number | null;
+  salvageValue?: number | null;
+  usefulLifeMonths?: number | null;
+  createdAt: Date;
+}) {
+  const purchaseCost = item.purchaseCost ?? 0;
+  const salvageValue = item.salvageValue ?? 0;
+  const usefulLifeMonths = item.usefulLifeMonths ?? 0;
+
+  if (purchaseCost <= 0 || usefulLifeMonths <= 0) {
+    return {
+      purchaseCost,
+      salvageValue,
+      usefulLifeMonths,
+      monthsElapsed: 0,
+      monthlyDepreciation: 0,
+      accumulatedDepreciation: 0,
+      currentBookValue: purchaseCost,
+    };
+  }
+
+  const now = new Date();
+  const created = new Date(item.createdAt);
+  const monthsElapsed = Math.max(
+    0,
+    (now.getFullYear() - created.getFullYear()) * 12 + (now.getMonth() - created.getMonth()),
+  );
+
+  const depreciableAmount = Math.max(0, purchaseCost - salvageValue);
+  const monthlyDepreciation = depreciableAmount / usefulLifeMonths;
+  const accumulatedDepreciation = Math.min(
+    depreciableAmount,
+    monthlyDepreciation * monthsElapsed,
+  );
+  const currentBookValue = Math.max(salvageValue, purchaseCost - accumulatedDepreciation);
+
+  return {
+    purchaseCost,
+    salvageValue,
+    usefulLifeMonths,
+    monthsElapsed,
+    monthlyDepreciation: Number(monthlyDepreciation.toFixed(2)),
+    accumulatedDepreciation: Number(accumulatedDepreciation.toFixed(2)),
+    currentBookValue: Number(currentBookValue.toFixed(2)),
+  };
+}
+
+export interface CreateDisposalRecordDTO {
+  itemId: string;
+  reason: DisposalReason;
+  saleValue?: number;
+  disposalMethod?: string | null;
+  notes?: string | null;
+}
+
+export async function createDisposalRecord(
+  schoolId: string,
+  data: CreateDisposalRecordDTO,
+  approvedById: string,
+  req?: Request,
+) {
+  const item = await db.inventoryItem.findFirst({
+    where: { id: data.itemId, schoolId },
+    include: { allocations: { where: { status: "ACTIVE" } } },
+  });
+
+  if (!item) throw new AppError("Inventory item not found", 404);
+  if (item.status === ItemLifecycleStatus.DISPOSED) {
+    throw new AppError("Item is already marked as disposed", 400);
+  }
+  if (item.allocations.length > 0) {
+    throw new AppError("Cannot dispose an item that has active allocations. Return it first.", 400);
+  }
+
+  const dep = calculateItemDepreciation(item);
+
+  const result = await db.$transaction(async (tx) => {
+    const disposal = await tx.disposalRecord.create({
+      data: {
+        schoolId,
+        itemId: item.id,
+        approvedById,
+        reason: data.reason,
+        bookValueAtDisposal: dep.currentBookValue,
+        saleValue: data.saleValue || 0,
+        disposalMethod: data.disposalMethod?.trim() || null,
+        notes: data.notes?.trim() || null,
+      },
+      include: {
+        item: true,
+        approvedBy: { select: { id: true, firstName: true, lastName: true } },
+      },
+    });
+
+    await tx.inventoryItem.update({
+      where: { id: item.id },
+      data: {
+        status: ItemLifecycleStatus.DISPOSED,
+        condition: ItemCondition.CONDEMNED,
+        isActive: false,
+      },
+    });
+
+    await recordMovement(
+      tx,
+      {
+        schoolId,
+        itemId: item.id,
+        type:
+          data.reason === DisposalReason.SOLD
+            ? MovementType.WRITTEN_OFF
+            : MovementType.DISPOSED,
+        quantity: item.itemType === ItemType.FIXED_ASSET ? 1 : (item.quantityOnHand ?? 1),
+        fromLocationId: item.currentLocationId,
+        performedById: approvedById,
+        note: `Disposal (${data.reason}): ${data.notes || "Item decommissioned"}`,
+      },
+      req,
+    );
+
+    return disposal;
+  });
+
+  return result;
+}
+
+export async function getDisposalRecords(
+  schoolId: string,
+  params?: { page?: number; limit?: number },
+) {
+  const page = Math.max(1, params?.page || 1);
+  const limit = Math.min(100, Math.max(1, params?.limit || 20));
+  const skip = (page - 1) * limit;
+
+  const [disposals, total] = await Promise.all([
+    db.disposalRecord.findMany({
+      where: { schoolId },
+      skip,
+      take: limit,
+      include: {
+        item: { select: { id: true, name: true, assetTagNumber: true, itemType: true } },
+        approvedBy: { select: { id: true, firstName: true, lastName: true } },
+      },
+      orderBy: [{ disposedAt: "desc" }],
+    }),
+    db.disposalRecord.count({ where: { schoolId } }),
+  ]);
+
+  return { disposals, total, page, limit, totalPages: Math.ceil(total / limit) };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13. STOCK COUNT & RECONCILIATION
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface CreateStockCountDTO {
+  locationId?: string | null;
+  notes?: string | null;
+}
+
+export async function createStockCount(
+  schoolId: string,
+  data: CreateStockCountDTO,
+  conductedById: string,
+  req?: Request,
+) {
+  // Find all active items in the target location or whole school
+  const items = await db.inventoryItem.findMany({
+    where: {
+      schoolId,
+      isActive: true,
+      ...(data.locationId && { currentLocationId: data.locationId }),
+    },
+    select: { id: true, quantityOnHand: true, itemType: true },
+  });
+
+  if (items.length === 0) {
+    throw new AppError("No active inventory items found for stock count scope", 400);
+  }
+
+  const stockCount = await db.$transaction(async (tx) => {
+    const sc = await tx.stockCount.create({
+      data: {
+        schoolId,
+        locationId: data.locationId || null,
+        conductedById,
+        notes: data.notes?.trim() || null,
+        status: "IN_PROGRESS",
+        lines: {
+          create: items.map((item) => ({
+            itemId: item.id,
+            expectedQty: item.itemType === ItemType.FIXED_ASSET ? 1 : (item.quantityOnHand ?? 0),
+            countedQty: null,
+            variance: null,
+          })),
+        },
+      },
+      include: {
+        lines: { include: { item: { select: { id: true, name: true, assetTagNumber: true, itemType: true } } } },
+        location: { select: { id: true, name: true } },
+        conductedBy: { select: { id: true, firstName: true, lastName: true } },
+      },
+    });
+
+    return sc;
+  });
+
+  recordAuditEvent({
+    schoolId,
+    actorId: conductedById,
+    action: "INVENTORY_STOCK_COUNT_STARTED",
+    targetType: "STOCK_COUNT",
+    targetId: stockCount.id,
+    req,
+  }).catch(() => {});
+
+  return stockCount;
+}
+
+export interface StockCountLineUpdate {
+  lineId: string;
+  countedQty: number;
+  notes?: string | null;
+}
+
+export async function updateStockCountLines(
+  schoolId: string,
+  stockCountId: string,
+  lines: StockCountLineUpdate[],
+) {
+  const stockCount = await db.stockCount.findFirst({
+    where: { id: stockCountId, schoolId },
+  });
+
+  if (!stockCount) throw new AppError("Stock count not found", 404);
+  if (stockCount.status !== "IN_PROGRESS") {
+    throw new AppError("Cannot update lines on a completed or cancelled stock count", 400);
+  }
+
+  await db.$transaction(async (tx) => {
+    for (const update of lines) {
+      const line = await tx.stockCountLine.findFirst({
+        where: { id: update.lineId, stockCountId },
+      });
+      if (line) {
+        const variance = update.countedQty - line.expectedQty;
+        await tx.stockCountLine.update({
+          where: { id: update.lineId },
+          data: {
+            countedQty: update.countedQty,
+            variance,
+            notes: update.notes?.trim() || line.notes,
+          },
+        });
+      }
+    }
+  });
+
+  return getStockCountById(schoolId, stockCountId);
+}
+
+export async function reconcileStockCount(
+  schoolId: string,
+  stockCountId: string,
+  reconciledById: string,
+  req?: Request,
+) {
+  const stockCount = await db.stockCount.findFirst({
+    where: { id: stockCountId, schoolId },
+    include: { lines: { include: { item: true } } },
+  });
+
+  if (!stockCount) throw new AppError("Stock count not found", 404);
+  if (stockCount.status !== "IN_PROGRESS") {
+    throw new AppError("Only in-progress stock counts can be reconciled", 400);
+  }
+
+  const uncounted = stockCount.lines.some((l) => l.countedQty === null);
+  if (uncounted) {
+    throw new AppError("All lines must be counted before completing reconciliation", 400);
+  }
+
+  const result = await db.$transaction(async (tx) => {
+    for (const line of stockCount.lines) {
+      const counted = line.countedQty ?? line.expectedQty;
+      const variance = line.variance ?? 0;
+
+      if (variance !== 0 && line.item.itemType === ItemType.CONSUMABLE) {
+        // Adjust consumable stock
+        await tx.inventoryItem.update({
+          where: { id: line.itemId },
+          data: { quantityOnHand: counted },
+        });
+
+        await recordMovement(
+          tx,
+          {
+            schoolId,
+            itemId: line.itemId,
+            type: MovementType.ADJUSTED,
+            quantity: Math.abs(variance),
+            toLocationId: stockCount.locationId || line.item.currentLocationId,
+            performedById: reconciledById,
+            note: `Stock count reconciliation #${stockCount.id.substring(0, 8)}: adjusted by ${variance > 0 ? "+" : ""}${variance}`,
+          },
+          req,
+        );
+      }
+    }
+
+    const completed = await tx.stockCount.update({
+      where: { id: stockCountId },
+      data: {
+        status: "COMPLETED",
+        completedAt: new Date(),
+      },
+      include: {
+        lines: { include: { item: true } },
+        location: true,
+        conductedBy: { select: { id: true, firstName: true, lastName: true } },
+      },
+    });
+
+    return completed;
+  });
+
+  recordAuditEvent({
+    schoolId,
+    actorId: reconciledById,
+    action: "INVENTORY_STOCK_COUNT_RECONCILED",
+    targetType: "STOCK_COUNT",
+    targetId: stockCountId,
+    req,
+  }).catch(() => {});
+
+  return result;
+}
+
+export async function getStockCounts(
+  schoolId: string,
+  params?: { page?: number; limit?: number },
+) {
+  const page = Math.max(1, params?.page || 1);
+  const limit = Math.min(100, Math.max(1, params?.limit || 20));
+  const skip = (page - 1) * limit;
+
+  const [stockCounts, total] = await Promise.all([
+    db.stockCount.findMany({
+      where: { schoolId },
+      skip,
+      take: limit,
+      include: {
+        location: { select: { id: true, name: true } },
+        conductedBy: { select: { id: true, firstName: true, lastName: true } },
+        _count: { select: { lines: true } },
+      },
+      orderBy: [{ startedAt: "desc" }],
+    }),
+    db.stockCount.count({ where: { schoolId } }),
+  ]);
+
+  return { stockCounts, total, page, limit, totalPages: Math.ceil(total / limit) };
+}
+
+export async function getStockCountById(schoolId: string, id: string) {
+  const stockCount = await db.stockCount.findFirst({
+    where: { id, schoolId },
+    include: {
+      location: true,
+      conductedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+      lines: {
+        include: {
+          item: {
+            select: {
+              id: true,
+              name: true,
+              assetTagNumber: true,
+              sku: true,
+              unit: true,
+              itemType: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!stockCount) throw new AppError("Stock count not found", 404);
+  return stockCount;
+}
+
 
 
