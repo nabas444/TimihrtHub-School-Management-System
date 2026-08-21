@@ -775,18 +775,30 @@ router.delete(
           where: { employeeId: id },
         });
 
-        // 3. Clear direct reports manager reference
+        // 3. Unassign from hostel maintenance tickets
+        await tx.hostelMaintenanceTicket.updateMany({
+          where: { assignedToId: id },
+          data: { assignedToId: null },
+        });
+
+        // 4. Unlink from hired job applications
+        await tx.jobApplication.updateMany({
+          where: { hiredEmployeeId: id },
+          data: { hiredEmployeeId: null },
+        });
+
+        // 5. Clear direct reports manager reference
         await tx.employee.updateMany({
           where: { managerId: id },
           data: { managerId: null },
         });
 
-        // 4. Delete documents
+        // 6. Delete documents
         await tx.employeeDocument.deleteMany({
           where: { employeeId: id },
         });
 
-        // 5. Delete onboarding checklists & items
+        // 7. Delete onboarding checklists & items
         const checklists = await tx.onboardingChecklist.findMany({
           where: { employeeId: id },
           select: { id: true },
@@ -801,14 +813,14 @@ router.delete(
           });
         }
 
-        // 6. Delete offboarding records & items
+        // 8. Delete offboarding records & exit checklist items
         const offboards = await tx.offboardingRecord.findMany({
           where: { employeeId: id },
           select: { id: true },
         });
         const offIds = offboards.map((o) => o.id);
         if (offIds.length > 0) {
-          await tx.offboardingChecklistItem.deleteMany({
+          await tx.exitChecklistItem.deleteMany({
             where: { offboardingId: { in: offIds } },
           });
           await tx.offboardingRecord.deleteMany({
@@ -816,27 +828,37 @@ router.delete(
           });
         }
 
-        // 7. Delete performance reviews
+        // 9. Delete performance reviews
         await tx.performanceReview.deleteMany({
           where: { employeeId: id },
         });
 
-        // 8. Delete training records
+        // 10. Delete training records
         await tx.staffTraining.deleteMany({
           where: { employeeId: id },
         });
 
-        // 9. Delete disciplinary records
+        // 11. Delete disciplinary records
         await tx.staffDisciplinaryRecord.deleteMany({
           where: { employeeId: id },
         });
 
-        // 10. Delete the employee record
+        // 12. Delete leave requests
+        await tx.leaveRequest.deleteMany({
+          where: { employeeId: id },
+        });
+
+        // 13. Delete payroll records
+        await tx.payrollRecord.deleteMany({
+          where: { employeeId: id },
+        });
+
+        // 14. Delete the employee record
         await tx.employee.delete({
           where: { id },
         });
 
-        // 11. If user was linked, deactivate user account
+        // 15. If user was linked, deactivate user account
         if (employee.userId) {
           await tx.user.update({
             where: { id: employee.userId },

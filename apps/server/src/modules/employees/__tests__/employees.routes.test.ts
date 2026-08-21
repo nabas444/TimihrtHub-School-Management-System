@@ -79,4 +79,40 @@ describe("Employee HR Schema and Workflow Validations", () => {
     expect(parsed.type).toBe("TEACHING_LICENSE");
     expect(parsed.reminderDays).toBe(60);
   });
+
+  it("validates portal login provisioning schema supporting all system roles", () => {
+    const createUserAccountSchema = z.object({
+      role: z.nativeEnum({
+        STUDENT: "STUDENT",
+        TEACHER: "TEACHER",
+        PARENT: "PARENT",
+        FINANCE: "FINANCE",
+        ADMIN: "ADMIN",
+        SUPER_ADMIN: "SUPER_ADMIN",
+      }),
+      email: z.string().email("Valid email required"),
+      password: z.string().min(6, "Password must be at least 6 characters"),
+    });
+
+    const wardenAccount = {
+      role: "TEACHER",
+      email: "yonas.bekele@timhirthub.edu.et",
+      password: "SecurePassword123!",
+    };
+    expect(createUserAccountSchema.parse(wardenAccount).role).toBe("TEACHER");
+
+    const adminAccount = {
+      role: "ADMIN",
+      email: "admin.staff@timhirthub.edu.et",
+      password: "AdminPassword123!",
+    };
+    expect(createUserAccountSchema.parse(adminAccount).role).toBe("ADMIN");
+
+    const superAdminAccount = {
+      role: "SUPER_ADMIN",
+      email: "director@timhirthub.edu.et",
+      password: "SuperPassword123!",
+    };
+    expect(createUserAccountSchema.parse(superAdminAccount).role).toBe("SUPER_ADMIN");
+  });
 });
