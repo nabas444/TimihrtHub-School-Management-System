@@ -11,6 +11,7 @@ import purchaseOrdersRouter from "./inventory.purchase-orders.routes";
 import maintenanceRouter from "./inventory.maintenance.routes";
 import disposalRouter from "./inventory.disposal.routes";
 import stockCountsRouter from "./inventory.stock-counts.routes";
+import reportsRouter from "./inventory.reports.routes";
 
 const router = Router();
 
@@ -33,5 +34,8 @@ router.use("/purchase-orders", purchaseOrdersRouter);
 router.use("/maintenance", maintenanceRouter);
 router.use("/disposal", disposalRouter);
 router.use("/stock-counts", stockCountsRouter);
+
+// Phase 5 Sub-routers
+router.use("/reports", reportsRouter);
 
 export default router;

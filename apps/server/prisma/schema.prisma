@@ -3425,8 +3425,8 @@ model GoodsReceipt {
   id               String            @id @default(uuid())
   schoolId         String
   school           School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  poId             String
-  po               PurchaseOrder     @relation(fields: [poId], references: [id])
+  poId             String?
+  po               PurchaseOrder?    @relation(fields: [poId], references: [id])
   receivedById     String
   receivedBy       User              @relation(fields: [receivedById], references: [id])
   receivedAt       DateTime          @default(now())
@@ -3442,14 +3442,14 @@ model GoodsReceipt {
 }
 
 model GoodsReceiptLine {
-  id                 String            @id @default(uuid())
+  id                 String             @id @default(uuid())
   receiptId          String
-  receipt            GoodsReceipt      @relation(fields: [receiptId], references: [id], onDelete: Cascade)
-  poLineId           String
-  poLine             PurchaseOrderLine @relation(fields: [poLineId], references: [id])
+  receipt            GoodsReceipt       @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  poLineId           String?
+  poLine             PurchaseOrderLine? @relation(fields: [poLineId], references: [id])
   quantityReceived   Int
-  conditionOnArrival ItemCondition     @default(NEW)
-  serialNumbers      String[]          // for fixed assets, one entry per unit received
+  conditionOnArrival ItemCondition      @default(NEW)
+  serialNumbers      String[]           // for fixed assets, one entry per unit received
 
   @@map("inventory_goods_receipt_lines")
 }

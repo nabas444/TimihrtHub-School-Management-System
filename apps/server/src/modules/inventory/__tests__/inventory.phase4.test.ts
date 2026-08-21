@@ -5,6 +5,7 @@ import {
   ItemLifecycleStatus,
   MovementType,
   DisposalReason,
+  MaintenanceStatus,
 } from "@prisma/client";
 import {
   createMaintenanceTicket,
@@ -16,7 +17,6 @@ import {
   reconcileStockCount,
 } from "../inventory.service";
 import { db } from "../../../config/database";
-import { AppError } from "../../../middleware/errorHandler";
 
 vi.mock("../../../config/database", () => ({
   db: {
@@ -81,7 +81,7 @@ describe("Feature 8: Inventory & Asset Management — Phase 4 Test Suite (Lifecy
       (db.maintenanceRecord.create as any).mockResolvedValue({
         id: "maint-1",
         itemId: "item-printer-1",
-        status: "REPORTED",
+        status: MaintenanceStatus.REPORTED,
       });
       (db.inventoryItem.update as any).mockResolvedValue({});
       (db.inventoryMovement.create as any).mockResolvedValue({});
@@ -122,7 +122,7 @@ describe("Feature 8: Inventory & Asset Management — Phase 4 Test Suite (Lifecy
 
       (db.maintenanceRecord.update as any).mockResolvedValue({
         id: "maint-1",
-        status: "COMPLETED",
+        status: MaintenanceStatus.RESOLVED,
       });
       (db.inventoryItem.update as any).mockResolvedValue({});
       (db.inventoryMovement.create as any).mockResolvedValue({});
@@ -131,14 +131,14 @@ describe("Feature 8: Inventory & Asset Management — Phase 4 Test Suite (Lifecy
         schoolId,
         "maint-1",
         {
-          status: "COMPLETED",
+          status: MaintenanceStatus.RESOLVED,
           resolutionNotes: "Replaced rubber pickup rollers; tested 50 pages ok",
           conditionAfterRepair: ItemCondition.GOOD,
         },
         userId,
       );
 
-      expect(res.status).toBe("COMPLETED");
+      expect(res.status).toBe(MaintenanceStatus.RESOLVED);
       expect(db.inventoryItem.update).toHaveBeenCalledWith({
         where: { id: "item-printer-1" },
         data: expect.objectContaining({
@@ -202,7 +202,7 @@ describe("Feature 8: Inventory & Asset Management — Phase 4 Test Suite (Lifecy
           itemId: "item-server-old",
           reason: DisposalReason.OBSOLETE,
           saleValue: 4000,
-          disposalMethod: "Electronic waste recycling auction",
+          method: "Electronic waste recycling auction",
           notes: "Decommissioned after server upgrade",
         },
         userId,
@@ -266,7 +266,7 @@ describe("Feature 8: Inventory & Asset Management — Phase 4 Test Suite (Lifecy
 
       expect(sc.id).toBe("sc-101");
       expect(sc.status).toBe("IN_PROGRESS");
-      expect(sc.lines).toHaveLength(2);
+      expect((sc as any).lines).toHaveLength(2);
     });
 
     it("reconciles variance by auto-adjusting consumable stock and logging ADJUSTED movements", async () => {

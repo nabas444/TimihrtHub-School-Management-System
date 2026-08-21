@@ -18,7 +18,7 @@ const createDisposalSchema = z.object({
   itemId: z.string().uuid("Item ID must be a valid UUID"),
   reason: z.nativeEnum(DisposalReason),
   saleValue: z.number().nonnegative().optional(),
-  disposalMethod: z.string().optional().nullable(),
+  method: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
 });
 

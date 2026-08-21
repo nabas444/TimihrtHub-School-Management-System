@@ -162,6 +162,13 @@ const HostelApplicationsPage = lazy(() => import("../features/hostel/HostelAppli
 const HostelDailyOpsPage = lazy(() => import("../features/hostel/HostelDailyOpsPage"));
 const HostelCarePage = lazy(() => import("../features/hostel/HostelCarePage"));
 const HostelPortalPage = lazy(() => import("../features/hostel/HostelPortalPage"));
+const InventoryDashboardPage = lazy(() => import("../features/inventory/InventoryDashboardPage"));
+const InventoryItemsPage = lazy(() => import("../features/inventory/InventoryItemsPage"));
+const InventoryAllocationsPage = lazy(() => import("../features/inventory/InventoryAllocationsPage"));
+const InventoryProcurementPage = lazy(() => import("../features/inventory/InventoryProcurementPage"));
+const InventoryLifecyclePage = lazy(() => import("../features/inventory/InventoryLifecyclePage"));
+const InventoryLocationsPage = lazy(() => import("../features/inventory/InventoryLocationsPage"));
+const MyAssetsPage = lazy(() => import("../features/inventory/MyAssetsPage"));
 const NotFoundPage = lazy(() =>
   import("../pages/NotFoundPage").then((m) => ({ default: m.NotFoundPage })),
 );
@@ -604,6 +611,74 @@ export const router = createBrowserRouter([
         element: (
           <S>
             <HostelPortalPage />
+          </S>
+        ),
+      },
+      {
+        path: "/inventory",
+        element: (
+          <S>
+            <StaffRoute>
+              <InventoryDashboardPage />
+            </StaffRoute>
+          </S>
+        ),
+      },
+      {
+        path: "/inventory/items",
+        element: (
+          <S>
+            <StaffRoute>
+              <InventoryItemsPage />
+            </StaffRoute>
+          </S>
+        ),
+      },
+      {
+        path: "/inventory/allocations",
+        element: (
+          <S>
+            <StaffRoute>
+              <InventoryAllocationsPage />
+            </StaffRoute>
+          </S>
+        ),
+      },
+      {
+        path: "/inventory/procurement",
+        element: (
+          <S>
+            <StaffRoute>
+              <InventoryProcurementPage />
+            </StaffRoute>
+          </S>
+        ),
+      },
+      {
+        path: "/inventory/lifecycle",
+        element: (
+          <S>
+            <StaffRoute>
+              <InventoryLifecyclePage />
+            </StaffRoute>
+          </S>
+        ),
+      },
+      {
+        path: "/inventory/locations",
+        element: (
+          <S>
+            <AdminRoute>
+              <InventoryLocationsPage />
+            </AdminRoute>
+          </S>
+        ),
+      },
+      {
+        path: "/inventory/mine",
+        element: (
+          <S>
+            <MyAssetsPage />
           </S>
         ),
       },

@@ -38,6 +38,7 @@ import {
   UserPlus,
   ScrollText,
   Building2,
+  Package,
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -149,6 +150,18 @@ const NAV_CONFIG = {
             { to: "/hostel/care", label: "nav.hostel_care" },
           ],
         },
+        {
+          icon: Package,
+          label: "nav.inventory",
+          children: [
+            { to: "/inventory", label: "nav.inventory_dashboard" },
+            { to: "/inventory/items", label: "nav.inventory_items" },
+            { to: "/inventory/allocations", label: "nav.inventory_allocations" },
+            { to: "/inventory/procurement", label: "nav.inventory_procurement" },
+            { to: "/inventory/lifecycle", label: "nav.inventory_lifecycle" },
+            { to: "/inventory/locations", label: "nav.inventory_locations" },
+          ],
+        },
         { to: "/ai", icon: Brain, label: "nav.ai_insights" },
       ],
     },
@@ -246,6 +259,7 @@ const NAV_CONFIG = {
           icon: CalendarCheck,
           label: "nav.leave_requests",
         },
+        { to: "/inventory/mine", icon: Package, label: "nav.my_assets" },
       ],
     },
     {
@@ -267,6 +281,15 @@ const NAV_CONFIG = {
       section: "nav.section_finance",
       items: [
         { to: "/fees", icon: DollarSign, label: "nav.fees" },
+        {
+          icon: Package,
+          label: "nav.inventory",
+          children: [
+            { to: "/inventory", label: "nav.inventory_dashboard" },
+            { to: "/inventory/procurement", label: "nav.inventory_procurement" },
+            { to: "/inventory/lifecycle", label: "nav.inventory_lifecycle" },
+          ],
+        },
         {
           icon: HeartHandshake,
           label: "nav.student_support",
@@ -334,6 +357,7 @@ const NAV_CONFIG = {
         },
         { to: "/certificates/mine", icon: Award, label: "nav.my_certificates" },
         { to: "/student-support/my-support", icon: HeartHandshake, label: "nav.my_support" },
+        { to: "/inventory/mine", icon: Package, label: "nav.my_assets" },
         { to: "/files", icon: FileText, label: "nav.resources" },
         { to: "/policies", icon: Shield, label: "nav.policies_acknowledgments" },
         { to: "/library", icon: Library, label: "nav.library" },

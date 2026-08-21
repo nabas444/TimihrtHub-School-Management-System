@@ -549,6 +549,7 @@ export default function LandingPage() {
 
   const [servicesVideoVisible, setServicesVideoVisible] = useState(false);
   const [isHeroMuted, setIsHeroMuted] = useState(true);
+  const [isHeroVideoPlaying, setIsHeroVideoPlaying] = useState(false);
   const [isServicesMuted, setIsServicesMuted] = useState(true);
 
   const servicesRef = useRef(null);
@@ -698,9 +699,34 @@ export default function LandingPage() {
       videoObserver.observe(servicesSectionRef.current);
     }
 
+    // YouTube hero playback message listener
+    const handleYouTubeMessage = (e) => {
+      try {
+        const data = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
+        if (data?.event === "onStateChange" || data?.info?.playerState !== undefined) {
+          const state = data?.info?.playerState ?? data?.info;
+          if (state === 1) {
+            setIsHeroVideoPlaying(true);
+          } else if (state === 2 || state === 0) {
+            setIsHeroVideoPlaying(false);
+          }
+        }
+      } catch {
+        // non-JSON message
+      }
+    };
+    window.addEventListener("message", handleYouTubeMessage);
+
+    // Fallback: If video starts without postMessage callback within 3.5s
+    const heroFallbackTimer = setTimeout(() => {
+      setIsHeroVideoPlaying(true);
+    }, 3500);
+
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
       document.removeEventListener("keydown", handleEscape);
+      window.removeEventListener("message", handleYouTubeMessage);
+      clearTimeout(heroFallbackTimer);
       revealObserver.disconnect();
       if (videoObserver) videoObserver.disconnect();
     };
@@ -966,7 +992,34 @@ export default function LandingPage() {
       </header>
 
       {/* ── Hero ───────────────────────────────────────────────────────── */}
-      <section className="relative overflow-hidden bg-gray-100 min-h-[600px] flex items-center">
+      <section className="relative overflow-hidden bg-slate-950 min-h-[600px] flex items-center">
+        {/* Animated Royal Blue & Radiant White/Cyan Ambient Canvas Layer */}
+        <div
+          className={`absolute inset-0 hero-animated-bg overflow-hidden pointer-events-none transition-all duration-1000 ease-in-out ${
+            isHeroVideoPlaying
+              ? "opacity-35 scale-105"
+              : "opacity-100 scale-100"
+          }`}
+        >
+          {/* Drifting Floating Cyan Glowing Orb */}
+          <div
+            className="absolute -top-24 -left-24 w-[480px] h-[480px] rounded-full bg-cyan-400/25 blur-3xl pointer-events-none"
+            style={{ animation: "orbFloatA 10s ease-in-out infinite" }}
+          />
+
+          {/* Drifting Floating White/Sky Glowing Orb */}
+          <div
+            className="absolute -bottom-28 right-1/4 w-[520px] h-[520px] rounded-full bg-blue-300/20 blur-3xl pointer-events-none"
+            style={{ animation: "orbFloatB 13s ease-in-out infinite" }}
+          />
+
+          {/* Diagonal Glass Light Shimmer Band */}
+          <div
+            className="absolute inset-y-0 w-48 bg-gradient-to-r from-transparent via-white/15 to-transparent pointer-events-none"
+            style={{ animation: "shimmerWave 8s ease-in-out infinite" }}
+          />
+        </div>
+
         {/* Background YouTube video layer - Natural 16:9 unzoomed framing */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none -z-0">
           <iframe
@@ -974,10 +1027,15 @@ export default function LandingPage() {
             src="https://www.youtube.com/embed/GWsBXpZhCxA?autoplay=1&mute=1&loop=1&playlist=GWsBXpZhCxA&controls=0&modestbranding=1&rel=0&showinfo=0&iv_load_policy=3&disablekb=1&playsinline=1&enablejsapi=1"
             title="TimhirtHub Hero Background"
             allow="autoplay; encrypted-media"
-            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[100vw] min-w-[177.77vh] h-[56.25vw] min-h-full pointer-events-none opacity-100"
+            className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[100vw] min-w-[177.77vh] h-[56.25vw] min-h-full pointer-events-none transition-opacity duration-1000 ease-in-out ${
+              isHeroVideoPlaying ? "opacity-100" : "opacity-0"
+            }`}
             tabIndex={-1}
           />
         </div>
+
+        {/* Deep Left-to-Right Scrim Gradient for 100% Typography Contrast */}
+        <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/45 to-transparent pointer-events-none z-[1]" />
 
         {/* Floating Sound Toggle Button for Hero */}
         <div className="absolute bottom-6 right-6 z-20">
@@ -1001,9 +1059,67 @@ export default function LandingPage() {
           </button>
         </div>
 
-        <div className="relative mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28 w-full">
+        <div className="relative z-10 mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28 w-full">
           {/* Unified synchronized animation for top text, middle 3 dashes, and bottom text */}
           <style>{`
+            @keyframes heroGradientSlide {
+              0% {
+                background-position: 0% 50%;
+              }
+              50% {
+                background-position: 100% 50%;
+              }
+              100% {
+                background-position: 0% 50%;
+              }
+            }
+
+            @keyframes orbFloatA {
+              0%, 100% {
+                transform: translate(0px, 0px) scale(1);
+                opacity: 0.75;
+              }
+              50% {
+                transform: translate(70px, -50px) scale(1.25);
+                opacity: 0.95;
+              }
+            }
+
+            @keyframes orbFloatB {
+              0%, 100% {
+                transform: translate(0px, 0px) scale(1);
+                opacity: 0.55;
+              }
+              50% {
+                transform: translate(-60px, 45px) scale(1.3);
+                opacity: 0.9;
+              }
+            }
+
+            @keyframes shimmerWave {
+              0% {
+                transform: translateX(-100%) rotate(25deg);
+              }
+              100% {
+                transform: translateX(250%) rotate(25deg);
+              }
+            }
+
+            .hero-animated-bg {
+              background: linear-gradient(
+                135deg,
+                #050b14 0%,
+                #0c2340 18%,
+                #1d4ed8 45%,
+                #0284c7 68%,
+                #38bdf8 82%,
+                #ffffff 92%,
+                #0c2340 100%
+              );
+              background-size: 300% 300%;
+              animation: heroGradientSlide 12s ease-in-out infinite;
+            }
+
             @keyframes syncRevealAndEraseUnified {
               0% {
                 clip-path: inset(0 100% 0 0);

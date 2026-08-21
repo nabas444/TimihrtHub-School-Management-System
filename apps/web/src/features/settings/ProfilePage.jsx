@@ -4,10 +4,13 @@ import api from "../../lib/api";
 import { useAuthStore } from "../../store/authStore";
 import { Avatar } from "../../components/ui/index";
 import toast from "react-hot-toast";
-import { Save, Lock, MessageSquare, Upload } from "lucide-react";
+import { Save, Lock, MessageSquare, Upload, Sun, Moon, Palette } from "lucide-react";
+import { useUIStore } from "../../store/uiStore";
+import clsx from "clsx";
 
 export default function ProfilePage() {
   const { user, updateUser, isParent } = useAuthStore();
+  const { theme, setTheme } = useUIStore();
   const qc = useQueryClient();
   const avatarRef = useRef(null);
   const [form, setForm] = useState({
@@ -246,6 +249,56 @@ export default function ProfilePage() {
           )}
         </div>
       )}
+
+      {/* Appearance & Theme Preferences */}
+      <div className="card p-6">
+        <h3 className="font-semibold text-gray-900 dark:text-white mb-1 flex items-center gap-2">
+          <Palette className="w-4 h-4 text-primary-600 dark:text-primary-400" /> Appearance & Theme
+        </h3>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+          Customize your interface appearance by switching between Light and Dark mode.
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={() => setTheme("light")}
+            className={clsx(
+              "flex items-center gap-3 p-3.5 rounded-xl border transition-all text-left",
+              theme === "light"
+                ? "border-primary-600 bg-primary-50/70 dark:bg-primary-950/30 text-primary-900 dark:text-primary-200 ring-2 ring-primary-500/20"
+                : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 text-gray-700 dark:text-gray-300"
+            )}
+          >
+            <div className="p-2.5 rounded-lg bg-white dark:bg-gray-800 text-amber-500 border border-gray-100 dark:border-gray-700 shadow-xs">
+              <Sun className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-gray-900 dark:text-white">Light Mode</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Bright and clean interface</p>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setTheme("dark")}
+            className={clsx(
+              "flex items-center gap-3 p-3.5 rounded-xl border transition-all text-left",
+              theme === "dark"
+                ? "border-primary-600 bg-primary-50/70 dark:bg-primary-950/30 text-primary-900 dark:text-primary-200 ring-2 ring-primary-500/20"
+                : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 text-gray-700 dark:text-gray-300"
+            )}
+          >
+            <div className="p-2.5 rounded-lg bg-white dark:bg-gray-800 text-primary-400 border border-gray-100 dark:border-gray-700 shadow-xs">
+              <Moon className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-gray-900 dark:text-white">Dark Mode</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Reduced eye strain in low light</p>
+            </div>
+          </button>
+        </div>
+      </div>
 
       {/* Change password */}
       <div className="card p-6">

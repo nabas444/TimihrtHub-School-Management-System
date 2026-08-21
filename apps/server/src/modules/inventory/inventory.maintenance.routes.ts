@@ -18,24 +18,22 @@ const managerGuard = authorize(Role.ADMIN, Role.SUPER_ADMIN);
 const createMaintenanceSchema = z.object({
   itemId: z.string().uuid("Item ID must be a valid UUID"),
   faultDescription: z.string().min(1, "Fault description is required"),
-  serviceProvider: z.string().optional().nullable(),
-  assignedStaffId: z.string().uuid().optional().nullable(),
-  scheduledAt: z.string().optional().nullable(),
+  externalVendor: z.string().optional().nullable(),
+  assignedToStaffId: z.string().uuid().optional().nullable(),
   cost: z.number().nonnegative().optional(),
 });
 
 const updateMaintenanceSchema = z.object({
   status: z.nativeEnum(MaintenanceStatus).optional(),
-  assignedStaffId: z.string().uuid().optional().nullable(),
-  serviceProvider: z.string().optional().nullable(),
-  scheduledAt: z.string().optional().nullable(),
+  assignedToStaffId: z.string().uuid().optional().nullable(),
+  externalVendor: z.string().optional().nullable(),
   cost: z.number().nonnegative().optional(),
   faultDescription: z.string().optional(),
   resolutionNotes: z.string().optional().nullable(),
 });
 
 const resolveMaintenanceSchema = z.object({
-  status: z.enum(["COMPLETED", "UNRESOLVABLE"]),
+  status: z.enum(["RESOLVED", "UNRESOLVABLE", "CLOSED"]),
   resolutionNotes: z.string().optional().nullable(),
   cost: z.number().nonnegative().optional(),
   conditionAfterRepair: z.nativeEnum(ItemCondition).optional(),

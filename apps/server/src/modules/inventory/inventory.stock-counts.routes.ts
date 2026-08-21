@@ -16,6 +16,7 @@ const staffGuard = authorize(Role.ADMIN, Role.SUPER_ADMIN, Role.TEACHER, Role.FI
 const managerGuard = authorize(Role.ADMIN, Role.SUPER_ADMIN, Role.FINANCE);
 
 const createStockCountSchema = z.object({
+  title: z.string().optional(),
   locationId: z.string().uuid().optional().nullable(),
   notes: z.string().optional().nullable(),
 });

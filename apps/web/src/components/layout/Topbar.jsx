@@ -3,8 +3,6 @@ import { useNavigate } from "react-router-dom";
 import {
   Bell,
   Menu,
-  Sun,
-  Moon,
   Search,
   X,
   Check,
@@ -27,7 +25,7 @@ import { formatInSchoolTimezone } from "../../lib/deadlines";
 
 export default function Topbar() {
   const { user } = useAuthStore();
-  const { toggleSidebar, theme, setTheme } = useUIStore();
+  const { toggleSidebar } = useUIStore();
   const { locale, setLocale, locales } = useTranslation();
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifTab, setNotifTab] = useState("ALL"); // "ALL" | "UNREAD" | "URGENT"
@@ -144,18 +142,6 @@ export default function Topbar() {
           ))}
         </select>
       </div>
-
-      {/* Theme toggle */}
-      <button
-        onClick={() => setTheme(theme === "light" ? "dark" : "light")}
-        className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500"
-      >
-        {theme === "dark" ? (
-          <Sun className="w-5 h-5" />
-        ) : (
-          <Moon className="w-5 h-5" />
-        )}
-      </button>
 
       {/* ── Notification Center Dropdown ──────────────────────────────────── */}
       <div className="relative" ref={notifRef}>

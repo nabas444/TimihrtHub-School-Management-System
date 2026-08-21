@@ -14,6 +14,7 @@ import {
   PurchaseOrderStatus,
   MaintenanceStatus,
   DisposalReason,
+  NotificationType,
   Role,
 } from "@prisma/client";
 import { db } from "../../config/database";
@@ -2679,7 +2680,7 @@ export async function resolveMaintenanceTicket(
   schoolId: string,
   id: string,
   data: {
-    status: MaintenanceStatus.RESOLVED | MaintenanceStatus.UNRESOLVABLE | MaintenanceStatus.CLOSED;
+    status: MaintenanceStatus;
     resolutionNotes?: string | null;
     cost?: number;
     conditionAfterRepair?: ItemCondition;
@@ -3205,6 +3206,224 @@ export async function getStockCountById(schoolId: string, id: string) {
   if (!stockCount) throw new AppError("Stock count not found", 404);
   return stockCount;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 14. INVENTORY REPORTING & ANALYTICS
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function getInventorySummaryReport(schoolId: string) {
+  const [
+    items,
+    allocations,
+    maintenanceCount,
+    pendingRequestsCount,
+    pendingPOCount,
+  ] = await Promise.all([
+    db.inventoryItem.findMany({
+      where: { schoolId, isActive: true },
+      select: {
+        id: true,
+        itemType: true,
+        status: true,
+        quantityOnHand: true,
+        unitCost: true,
+        purchaseCost: true,
+        salvageValue: true,
+        usefulLifeMonths: true,
+        reorderPoint: true,
+        createdAt: true,
+      },
+    }),
+    db.inventoryAllocation.findMany({
+      where: { schoolId, status: "ACTIVE" },
+      select: { custodianType: true, quantity: true },
+    }),
+    db.maintenanceRecord.count({
+      where: {
+        schoolId,
+        status: { in: [MaintenanceStatus.REPORTED, MaintenanceStatus.ASSIGNED, MaintenanceStatus.IN_PROGRESS, MaintenanceStatus.AWAITING_PARTS] },
+      },
+    }),
+    db.inventoryRequest.count({
+      where: { schoolId, status: RequestStatus.PENDING },
+    }),
+    db.purchaseOrder.count({
+      where: { schoolId, status: { in: [PurchaseOrderStatus.DRAFT, PurchaseOrderStatus.SUBMITTED, PurchaseOrderStatus.APPROVED] } },
+    }),
+  ]);
+
+  let totalFixedAssetsCount = 0;
+  let totalConsumablesCount = 0;
+  let totalFixedAssetBookValue = 0;
+  let totalConsumableStockValue = 0;
+  let lowStockAlertsCount = 0;
+
+  for (const it of items) {
+    if (it.itemType === ItemType.FIXED_ASSET) {
+      totalFixedAssetsCount++;
+      const dep = calculateItemDepreciation(it);
+      totalFixedAssetBookValue += dep.currentBookValue;
+    } else {
+      totalConsumablesCount++;
+      const stock = it.quantityOnHand ?? 0;
+      const cost = it.unitCost ?? 0;
+      totalConsumableStockValue += stock * cost;
+
+      if (it.reorderPoint !== null && stock <= it.reorderPoint) {
+        lowStockAlertsCount++;
+      }
+    }
+  }
+
+  const allocationsByType = {
+    STAFF: allocations.filter((a) => a.custodianType === CustodianType.STAFF).length,
+    STUDENT: allocations.filter((a) => a.custodianType === CustodianType.STUDENT).length,
+    ROOM: allocations.filter((a) => a.custodianType === CustodianType.ROOM).length,
+    OTHER: allocations.filter((a) => a.custodianType === CustodianType.DEPARTMENT || a.custodianType === CustodianType.CLASS).length,
+    TOTAL: allocations.length,
+  };
+
+  return {
+    totalItemsCount: items.length,
+    totalFixedAssetsCount,
+    totalConsumablesCount,
+    totalFixedAssetBookValue: Number(totalFixedAssetBookValue.toFixed(2)),
+    totalConsumableStockValue: Number(totalConsumableStockValue.toFixed(2)),
+    totalCombinedInventoryValuation: Number((totalFixedAssetBookValue + totalConsumableStockValue).toFixed(2)),
+    itemsUnderMaintenanceCount: maintenanceCount,
+    lowStockAlertsCount,
+    activeAllocationsCount: allocationsByType,
+    pendingRequestsCount,
+    pendingPOCount,
+  };
+}
+
+export async function getCategoryValuationReport(schoolId: string) {
+  const categories = await db.inventoryCategory.findMany({
+    where: { schoolId },
+    include: {
+      items: {
+        where: { isActive: true },
+        select: {
+          id: true,
+          itemType: true,
+          quantityOnHand: true,
+          unitCost: true,
+          purchaseCost: true,
+          salvageValue: true,
+          usefulLifeMonths: true,
+          createdAt: true,
+        },
+      },
+    },
+  });
+
+  return categories.map((cat) => {
+    let totalItems = cat.items.length;
+    let consumableValue = 0;
+    let fixedAssetBookValue = 0;
+
+    for (const it of cat.items) {
+      if (it.itemType === ItemType.CONSUMABLE) {
+        consumableValue += (it.quantityOnHand ?? 0) * (it.unitCost ?? 0);
+      } else {
+        const dep = calculateItemDepreciation(it);
+        fixedAssetBookValue += dep.currentBookValue;
+      }
+    }
+
+    return {
+      categoryId: cat.id,
+      categoryName: cat.name,
+      itemCount: totalItems,
+      consumableStockValue: Number(consumableValue.toFixed(2)),
+      fixedAssetBookValue: Number(fixedAssetBookValue.toFixed(2)),
+      totalValuation: Number((consumableValue + fixedAssetBookValue).toFixed(2)),
+    };
+  });
+}
+
+export async function getLocationUtilizationReport(schoolId: string) {
+  const locations = await db.inventoryLocation.findMany({
+    where: { schoolId, isActive: true },
+    include: {
+      items: {
+        where: { isActive: true },
+        select: {
+          id: true,
+          name: true,
+          itemType: true,
+          quantityOnHand: true,
+          unitCost: true,
+          purchaseCost: true,
+          salvageValue: true,
+          usefulLifeMonths: true,
+          createdAt: true,
+        },
+      },
+      allocations: {
+        where: { status: "ACTIVE" },
+        select: { id: true, itemId: true },
+      },
+    },
+  });
+
+  return locations.map((loc) => {
+    let totalItemsCount = loc.items?.length || 0;
+    let totalValue = 0;
+
+    for (const it of loc.items || []) {
+      if (it.itemType === ItemType.CONSUMABLE) {
+        totalValue += (it.quantityOnHand ?? 0) * (it.unitCost ?? 0);
+      } else {
+        const dep = calculateItemDepreciation(it);
+        totalValue += dep.currentBookValue;
+      }
+    }
+
+    return {
+      locationId: loc.id,
+      locationName: loc.name,
+      locationType: loc.type,
+      storedItemsCount: totalItemsCount,
+      activeRoomAllocationsCount: loc.allocations?.length || 0,
+      estimatedLocationValuation: Number(totalValue.toFixed(2)),
+    };
+  });
+}
+
+export async function getDepreciationScheduleReport(schoolId: string) {
+  const fixedAssets = await db.inventoryItem.findMany({
+    where: { schoolId, itemType: ItemType.FIXED_ASSET, isActive: true },
+    select: {
+      id: true,
+      name: true,
+      assetTagNumber: true,
+      serialNumber: true,
+      purchaseCost: true,
+      salvageValue: true,
+      usefulLifeMonths: true,
+      createdAt: true,
+      category: { select: { name: true } },
+      currentLocation: { select: { name: true } },
+    },
+    orderBy: [{ createdAt: "desc" }],
+  });
+
+  return fixedAssets.map((asset) => {
+    const dep = calculateItemDepreciation(asset);
+    return {
+      id: asset.id,
+      name: asset.name,
+      assetTagNumber: asset.assetTagNumber,
+      serialNumber: asset.serialNumber,
+      category: asset.category?.name || "Uncategorized",
+      location: asset.currentLocation?.name || "Unassigned",
+      ...dep,
+    };
+  });
+}
+
 
 
 
