@@ -2557,9 +2557,8 @@ export async function getPurchaseOrderById(schoolId: string, id: string) {
 export interface CreateMaintenanceTicketDTO {
   itemId: string;
   faultDescription: string;
-  serviceProvider?: string | null;
-  assignedStaffId?: string | null;
-  scheduledAt?: string | Date | null;
+  externalVendor?: string | null;
+  assignedToStaffId?: string | null;
   cost?: number;
 }
 
@@ -2584,17 +2583,16 @@ export async function createMaintenanceTicket(
         schoolId,
         itemId: item.id,
         reportedById,
-        assignedStaffId: data.assignedStaffId || null,
+        assignedToStaffId: data.assignedToStaffId || null,
         faultDescription: data.faultDescription.trim(),
-        serviceProvider: data.serviceProvider?.trim() || null,
-        scheduledAt: data.scheduledAt ? new Date(data.scheduledAt) : null,
+        externalVendor: data.externalVendor?.trim() || null,
         cost: data.cost || 0,
-        status: "REPORTED",
+        status: MaintenanceStatus.REPORTED,
       },
       include: {
         item: true,
         reportedBy: { select: { id: true, firstName: true, lastName: true } },
-        assignedStaff: { select: { id: true, firstName: true, lastName: true } },
+        assignedToStaff: { select: { id: true, firstName: true, lastName: true } },
       },
     });
 
@@ -2633,9 +2631,8 @@ export async function updateMaintenanceTicket(
   id: string,
   data: Partial<{
     status: MaintenanceStatus;
-    assignedStaffId: string | null;
-    serviceProvider: string | null;
-    scheduledAt: string | Date | null;
+    assignedToStaffId: string | null;
+    externalVendor: string | null;
     cost: number;
     faultDescription: string;
     resolutionNotes: string | null;
@@ -2652,11 +2649,8 @@ export async function updateMaintenanceTicket(
     where: { id },
     data: {
       ...(data.status !== undefined && { status: data.status }),
-      ...(data.assignedStaffId !== undefined && { assignedStaffId: data.assignedStaffId }),
-      ...(data.serviceProvider !== undefined && { serviceProvider: data.serviceProvider?.trim() || null }),
-      ...(data.scheduledAt !== undefined && {
-        scheduledAt: data.scheduledAt ? new Date(data.scheduledAt) : null,
-      }),
+      ...(data.assignedToStaffId !== undefined && { assignedToStaffId: data.assignedToStaffId }),
+      ...(data.externalVendor !== undefined && { externalVendor: data.externalVendor?.trim() || null }),
       ...(data.cost !== undefined && { cost: data.cost }),
       ...(data.faultDescription !== undefined && { faultDescription: data.faultDescription.trim() }),
       ...(data.resolutionNotes !== undefined && { resolutionNotes: data.resolutionNotes?.trim() || null }),
@@ -2664,7 +2658,7 @@ export async function updateMaintenanceTicket(
     include: {
       item: true,
       reportedBy: { select: { id: true, firstName: true, lastName: true } },
-      assignedStaff: { select: { id: true, firstName: true, lastName: true } },
+      assignedToStaff: { select: { id: true, firstName: true, lastName: true } },
     },
   });
 
@@ -2685,7 +2679,7 @@ export async function resolveMaintenanceTicket(
   schoolId: string,
   id: string,
   data: {
-    status: "COMPLETED" | "UNRESOLVABLE";
+    status: MaintenanceStatus.RESOLVED | MaintenanceStatus.UNRESOLVABLE | MaintenanceStatus.CLOSED;
     resolutionNotes?: string | null;
     cost?: number;
     conditionAfterRepair?: ItemCondition;
@@ -2700,13 +2694,13 @@ export async function resolveMaintenanceTicket(
   });
   if (!existing) throw new AppError("Maintenance record not found", 404);
 
-  const isResolved = data.status === "COMPLETED";
+  const isResolved = data.status === MaintenanceStatus.RESOLVED || data.status === MaintenanceStatus.CLOSED;
 
   const result = await db.$transaction(async (tx) => {
     const updatedMaint = await tx.maintenanceRecord.update({
       where: { id },
       data: {
-        status: isResolved ? "COMPLETED" : "UNRESOLVABLE",
+        status: data.status,
         resolutionNotes: data.resolutionNotes?.trim() || null,
         cost: data.cost !== undefined ? data.cost : existing.cost,
         resolvedAt: new Date(),
@@ -2786,9 +2780,9 @@ export async function getMaintenanceRecords(
       include: {
         item: { select: { id: true, name: true, assetTagNumber: true, status: true, itemType: true } },
         reportedBy: { select: { id: true, firstName: true, lastName: true } },
-        assignedStaff: { select: { id: true, firstName: true, lastName: true } },
+        assignedToStaff: { select: { id: true, firstName: true, lastName: true } },
       },
-      orderBy: [{ createdAt: "desc" }],
+      orderBy: [{ reportedAt: "desc" }],
     }),
     db.maintenanceRecord.count({ where }),
   ]);
@@ -2807,7 +2801,7 @@ export async function getMaintenanceRecordById(schoolId: string, id: string) {
         },
       },
       reportedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
-      assignedStaff: { select: { id: true, firstName: true, lastName: true, email: true } },
+      assignedToStaff: { select: { id: true, firstName: true, lastName: true, email: true } },
     },
   });
 
@@ -2871,7 +2865,7 @@ export interface CreateDisposalRecordDTO {
   itemId: string;
   reason: DisposalReason;
   saleValue?: number;
-  disposalMethod?: string | null;
+  method?: string | null;
   notes?: string | null;
 }
 
@@ -2905,7 +2899,7 @@ export async function createDisposalRecord(
         reason: data.reason,
         bookValueAtDisposal: dep.currentBookValue,
         saleValue: data.saleValue || 0,
-        disposalMethod: data.disposalMethod?.trim() || null,
+        method: data.method?.trim() || null,
         notes: data.notes?.trim() || null,
       },
       include: {
@@ -2976,6 +2970,7 @@ export async function getDisposalRecords(
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface CreateStockCountDTO {
+  title?: string;
   locationId?: string | null;
   notes?: string | null;
 }
@@ -2983,7 +2978,7 @@ export interface CreateStockCountDTO {
 export async function createStockCount(
   schoolId: string,
   data: CreateStockCountDTO,
-  conductedById: string,
+  startedById: string,
   req?: Request,
 ) {
   // Find all active items in the target location or whole school
@@ -3004,9 +2999,9 @@ export async function createStockCount(
     const sc = await tx.stockCount.create({
       data: {
         schoolId,
+        title: data.title?.trim() || "Physical Stock Count",
         locationId: data.locationId || null,
-        conductedById,
-        notes: data.notes?.trim() || null,
+        startedById,
         status: "IN_PROGRESS",
         lines: {
           create: items.map((item) => ({
@@ -3020,7 +3015,7 @@ export async function createStockCount(
       include: {
         lines: { include: { item: { select: { id: true, name: true, assetTagNumber: true, itemType: true } } } },
         location: { select: { id: true, name: true } },
-        conductedBy: { select: { id: true, firstName: true, lastName: true } },
+        startedBy: { select: { id: true, firstName: true, lastName: true } },
       },
     });
 
@@ -3029,7 +3024,7 @@ export async function createStockCount(
 
   recordAuditEvent({
     schoolId,
-    actorId: conductedById,
+    actorId: startedById,
     action: "INVENTORY_STOCK_COUNT_STARTED",
     targetType: "STOCK_COUNT",
     targetId: stockCount.id,
@@ -3139,7 +3134,7 @@ export async function reconcileStockCount(
       include: {
         lines: { include: { item: true } },
         location: true,
-        conductedBy: { select: { id: true, firstName: true, lastName: true } },
+        startedBy: { select: { id: true, firstName: true, lastName: true } },
       },
     });
 
@@ -3173,7 +3168,7 @@ export async function getStockCounts(
       take: limit,
       include: {
         location: { select: { id: true, name: true } },
-        conductedBy: { select: { id: true, firstName: true, lastName: true } },
+        startedBy: { select: { id: true, firstName: true, lastName: true } },
         _count: { select: { lines: true } },
       },
       orderBy: [{ startedAt: "desc" }],
@@ -3189,7 +3184,7 @@ export async function getStockCountById(schoolId: string, id: string) {
     where: { id, schoolId },
     include: {
       location: true,
-      conductedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+      startedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
       lines: {
         include: {
           item: {
@@ -3210,6 +3205,7 @@ export async function getStockCountById(schoolId: string, id: string) {
   if (!stockCount) throw new AppError("Stock count not found", 404);
   return stockCount;
 }
+
 
 
 
