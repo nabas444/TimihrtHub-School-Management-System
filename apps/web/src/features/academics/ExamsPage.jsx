@@ -28,6 +28,7 @@ import {
   Download,
 } from "lucide-react";
 import api from "../../lib/api";
+import { downloadFile } from "../../lib/downloadFile";
 import { Badge, EmptyState, Pagination } from "../../components/ui/index";
 import Modal from "../../components/ui/Modal";
 import PageLoader from "../../components/ui/PageLoader";
@@ -47,6 +48,7 @@ export default function ExamsPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [editExam, setEditExam] = useState(null);
   const [deleteConfirmExam, setDeleteConfirmExam] = useState(null);
+  const [downloadingMarksheetId, setDownloadingMarksheetId] = useState(null);
 
   // ── Advanced Multi-Criteria Filter States ────────────────────────
   const [searchQuery, setSearchQuery] = useState("");
@@ -237,23 +239,13 @@ export default function ExamsPage() {
       venue: exam.venue || "",
       instructions: exam.instructions || "",
     });
-  const [downloadingMarksheetId, setDownloadingMarksheetId] = useState(null);
+  };
 
   const handleDownloadMarksheet = async (exam) => {
     try {
       setDownloadingMarksheetId(exam.id);
-      const res = await api.get(`/academics/exams/${exam.id}/marksheet`, {
-        responseType: "blob",
-      });
-      const blob = new Blob([res.data], { type: "application/pdf" });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `marksheet-${exam.subject?.code || "exam"}-${(exam.title || "sheet").replace(/\s+/g, "-")}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+      const fallbackName = `marksheet-${exam.subject?.code || "exam"}-${(exam.title || "sheet").replace(/\s+/g, "-")}.pdf`;
+      await downloadFile(`/academics/exams/${exam.id}/marksheet`, fallbackName);
       toast.success("Marksheet downloaded successfully");
     } catch (err) {
       toast.error(err.response?.data?.message || "Failed to download exam marksheet PDF");

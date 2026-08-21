@@ -16,9 +16,9 @@ export default function RenewClubModal({ open, onClose, club }) {
     meetingSchedule: "",
   });
 
-  const { data: teachers } = useQuery({
-    queryKey: ["teachers-list"],
-    queryFn: () => api.get("/staff?role=TEACHER").then((r) => r.data.data),
+  const { data: facultyCandidates } = useQuery({
+    queryKey: ["club-faculty-candidates"],
+    queryFn: () => api.get("/clubs/faculty-candidates").then((r) => r.data.data || []),
     enabled: open,
   });
 
@@ -101,9 +101,9 @@ export default function RenewClubModal({ open, onClose, club }) {
             }
           >
             <option value="">Keep current / Assign Advisor</option>
-            {(teachers ?? []).map((t) => (
+            {(facultyCandidates ?? []).map((t) => (
               <option key={t.id} value={t.id}>
-                {t.firstName} {t.lastName}
+                {t.firstName} {t.lastName} — {t.role} ({t.email})
               </option>
             ))}
           </select>

@@ -1679,64 +1679,55 @@ export async function rsvpClubEvent(
   return rows[0];
 }
 
-export async function getAllSchoolClubCalendarEvents(schoolId: string, startDate?: string, endDate?: string) {
+export async function getUpcomingClubEvents(schoolId: string) {
   await ensureClubTables();
-
-  const start = startDate || new Date(Date.now() - 30 * 86400000).toISOString().split("T")[0];
-  const end = endDate || new Date(Date.now() + 60 * 86400000).toISOString().split("T")[0];
 
   const events: any[] = await db.$queryRawUnsafe(
     `
     SELECT
-      'EVENT' as item_type,
       e.id,
-      e.club_id,
-      c.name as club_name,
-      c.category as club_category,
+      e.club_id as "clubId",
       e.title,
       e.description,
-      e.event_type as type,
+      e.event_type as "eventType",
       e.date,
-      e.start_time,
-      e.end_time,
+      e.start_time as "startTime",
+      e.end_time as "endTime",
       e.location,
       e.status,
       e.capacity,
-      e.audience
+      e.audience,
+      json_build_object('id', c.id, 'name', c.name, 'category', c.category) as club
     FROM club_events e
     JOIN clubs c ON e.club_id = c.id
-    WHERE e.school_id = $1 AND e.date >= $2::date AND e.date <= $3::date AND e.status IN ('APPROVED', 'PUBLISHED')
-
-    UNION ALL
-
-    SELECT
-      'MEETING' as item_type,
-      m.id,
-      m.club_id,
-      c.name as club_name,
-      c.category as club_category,
-      m.title,
-      m.description,
-      'MEETING' as type,
-      m.date,
-      m.start_time,
-      m.end_time,
-      m.location,
-      m.status,
-      0 as capacity,
-      'CLUB_MEMBERS' as audience
-    FROM club_meetings m
-    JOIN clubs c ON m.club_id = c.id
-    WHERE m.school_id = $1 AND m.date >= $2::date AND m.date <= $3::date AND m.status = 'SCHEDULED'
-
-    ORDER BY date ASC, start_time ASC
+    WHERE e.school_id = $1 AND e.date >= CURRENT_DATE AND e.status IN ('APPROVED', 'PUBLISHED')
+    ORDER BY e.date ASC, e.start_time ASC
   `,
     schoolId,
-    start,
-    end,
   );
 
-  return events;
+  const meetings: any[] = await db.$queryRawUnsafe(
+    `
+    SELECT
+      m.id,
+      m.club_id as "clubId",
+      m.title,
+      m.description,
+      m.date,
+      m.start_time as "startTime",
+      m.end_time as "endTime",
+      m.location,
+      m.status,
+      json_build_object('id', c.id, 'name', c.name, 'category', c.category) as club
+    FROM club_meetings m
+    JOIN clubs c ON m.club_id = c.id
+    WHERE m.school_id = $1 AND m.date >= CURRENT_DATE AND m.status = 'SCHEDULED'
+    ORDER BY m.date ASC, m.start_time ASC
+  `,
+    schoolId,
+  );
+
+  return { events, meetings };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

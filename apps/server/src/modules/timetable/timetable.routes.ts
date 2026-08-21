@@ -503,36 +503,5 @@ router.delete(
   },
 );
 
-// ── Assign Subject Teaching ──────────────────────────────────
-router.post(
-  "/assign-teaching",
-  authorize(...isAdmin),
-  async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const data = z
-        .object({
-          classId: z.string(),
-          subjectId: z.string(),
-          teacherProfileId: z.string(),
-          academicYear: z.string(),
-        })
-        .parse(req.body);
-      sendCreated(
-        res,
-        await getOrCreateSubjectTeaching(
-          req.user.schoolId,
-          data.classId,
-          data.subjectId,
-          data.teacherProfileId,
-          data.academicYear,
-        ),
-        "Teaching assigned",
-      );
-    } catch (e) {
-      next(e);
-    }
-  },
-);
-
 export default router;
 

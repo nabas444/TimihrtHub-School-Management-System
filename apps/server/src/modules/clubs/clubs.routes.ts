@@ -57,16 +57,10 @@ router.get("/student-candidates", async (req: Request, res: Response, next: Next
   }
 });
 
-router.get("/calendar/all", async (req: Request, res: Response, next: NextFunction) => {
+router.get("/events/upcoming", async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const startDate = req.query.startDate as string | undefined;
-    const endDate = req.query.endDate as string | undefined;
-    const items = await ClubService.getAllSchoolClubCalendarEvents(
-      req.user.schoolId,
-      startDate,
-      endDate,
-    );
-    sendSuccess(res, items);
+    const data = await ClubService.getUpcomingClubEvents(req.user.schoolId);
+    sendSuccess(res, data);
   } catch (e) {
     next(e);
   }
