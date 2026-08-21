@@ -10,6 +10,9 @@ import {
   DepreciationMethod,
   CustodianType,
   AllocationStatus,
+  RequestStatus,
+  PurchaseOrderStatus,
+  Role,
 } from "@prisma/client";
 import { db } from "../../config/database";
 import { AppError } from "../../middleware/errorHandler";
@@ -1908,4 +1911,641 @@ export async function getMovements(
 
   return { movements, total, page, limit, totalPages: Math.ceil(total / limit) };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 9. REQUISITIONS & INVENTORY REQUESTS
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface RequestLineInput {
+  itemId?: string | null;
+  freeTextName?: string | null;
+  quantityRequested: number;
+}
+
+export interface CreateInventoryRequestDTO {
+  departmentOrRoom?: string | null;
+  reason: string;
+  neededBy?: string | Date | null;
+  lines: RequestLineInput[];
+}
+
+export async function createInventoryRequest(
+  schoolId: string,
+  data: CreateInventoryRequestDTO,
+  requestedById: string,
+  req?: Request,
+) {
+  if (!data.lines || data.lines.length === 0) {
+    throw new AppError("At least one request line is required", 400);
+  }
+
+  const request = await db.$transaction(async (tx) => {
+    const reqRecord = await tx.inventoryRequest.create({
+      data: {
+        schoolId,
+        requestedById,
+        departmentOrRoom: data.departmentOrRoom?.trim() || null,
+        reason: data.reason.trim(),
+        neededBy: data.neededBy ? new Date(data.neededBy) : null,
+        status: RequestStatus.PENDING,
+        lines: {
+          create: data.lines.map((l) => ({
+            itemId: l.itemId || null,
+            freeTextName: l.freeTextName?.trim() || null,
+            quantityRequested: Math.max(1, l.quantityRequested),
+            quantityFulfilled: 0,
+          })),
+        },
+      },
+      include: {
+        lines: { include: { item: true } },
+        requestedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+      },
+    });
+
+    return reqRecord;
+  });
+
+  recordAuditEvent({
+    schoolId,
+    actorId: requestedById,
+    action: "INVENTORY_REQUEST_CREATED",
+    targetType: "INVENTORY_REQUEST",
+    targetId: request.id,
+    metadata: { reason: request.reason, lineCount: request.lines.length },
+    req,
+  }).catch(() => {});
+
+  return request;
+}
+
+export async function approveInventoryRequest(
+  schoolId: string,
+  requestId: string,
+  approvedById: string,
+  req?: Request,
+) {
+  const existing = await db.inventoryRequest.findFirst({
+    where: { id: requestId, schoolId },
+    include: { requestedBy: true },
+  });
+
+  if (!existing) throw new AppError("Inventory request not found", 404);
+  if (existing.status !== RequestStatus.PENDING) {
+    throw new AppError(`Cannot approve a request with status '${existing.status}'`, 400);
+  }
+
+  const updated = await db.inventoryRequest.update({
+    where: { id: requestId },
+    data: {
+      status: RequestStatus.APPROVED,
+      approvedById,
+      approvedAt: new Date(),
+    },
+    include: {
+      lines: { include: { item: true } },
+      requestedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+      approvedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+    },
+  });
+
+  // Notify requester
+  db.notification.create({
+    data: {
+      schoolId,
+      userId: existing.requestedById,
+      type: "INVENTORY",
+      title: "Requisition Approved",
+      body: `Your inventory request for "${existing.reason}" has been approved.`,
+      data: { requestId: existing.id },
+    },
+  }).catch(() => {});
+
+  recordAuditEvent({
+    schoolId,
+    actorId: approvedById,
+    action: "INVENTORY_REQUEST_APPROVED",
+    targetType: "INVENTORY_REQUEST",
+    targetId: requestId,
+    req,
+  }).catch(() => {});
+
+  return updated;
+}
+
+export async function rejectInventoryRequest(
+  schoolId: string,
+  requestId: string,
+  rejectionReason: string,
+  approvedById: string,
+  req?: Request,
+) {
+  const existing = await db.inventoryRequest.findFirst({
+    where: { id: requestId, schoolId },
+  });
+
+  if (!existing) throw new AppError("Inventory request not found", 404);
+  if (existing.status !== RequestStatus.PENDING) {
+    throw new AppError(`Cannot reject a request with status '${existing.status}'`, 400);
+  }
+
+  const updated = await db.inventoryRequest.update({
+    where: { id: requestId },
+    data: {
+      status: RequestStatus.REJECTED,
+      approvedById,
+      rejectionReason: rejectionReason.trim(),
+      approvedAt: new Date(),
+    },
+    include: {
+      lines: { include: { item: true } },
+      requestedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+    },
+  });
+
+  // Notify requester
+  db.notification.create({
+    data: {
+      schoolId,
+      userId: existing.requestedById,
+      type: "INVENTORY",
+      title: "Requisition Rejected",
+      body: `Your inventory request was rejected: ${rejectionReason}`,
+      data: { requestId: existing.id, rejectionReason },
+    },
+  }).catch(() => {});
+
+  recordAuditEvent({
+    schoolId,
+    actorId: approvedById,
+    action: "INVENTORY_REQUEST_REJECTED",
+    targetType: "INVENTORY_REQUEST",
+    targetId: requestId,
+    metadata: { rejectionReason },
+    req,
+  }).catch(() => {});
+
+  return updated;
+}
+
+export async function getInventoryRequests(
+  schoolId: string,
+  params?: {
+    status?: RequestStatus;
+    requestedById?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+  },
+) {
+  const page = Math.max(1, params?.page || 1);
+  const limit = Math.min(100, Math.max(1, params?.limit || 20));
+  const skip = (page - 1) * limit;
+
+  const where: Prisma.InventoryRequestWhereInput = {
+    schoolId,
+    ...(params?.status && { status: params.status }),
+    ...(params?.requestedById && { requestedById: params.requestedById }),
+    ...(params?.search && {
+      OR: [
+        { reason: { contains: params.search, mode: "insensitive" } },
+        { departmentOrRoom: { contains: params.search, mode: "insensitive" } },
+      ],
+    }),
+  };
+
+  const [requests, total] = await Promise.all([
+    db.inventoryRequest.findMany({
+      where,
+      skip,
+      take: limit,
+      include: {
+        requestedBy: { select: { id: true, firstName: true, lastName: true, email: true, role: true } },
+        approvedBy: { select: { id: true, firstName: true, lastName: true } },
+        lines: { include: { item: { select: { id: true, name: true, itemType: true } } } },
+        _count: { select: { purchaseOrders: true, allocations: true } },
+      },
+      orderBy: [{ createdAt: "desc" }],
+    }),
+    db.inventoryRequest.count({ where }),
+  ]);
+
+  return { requests, total, page, limit, totalPages: Math.ceil(total / limit) };
+}
+
+export async function getInventoryRequestById(schoolId: string, id: string) {
+  const request = await db.inventoryRequest.findFirst({
+    where: { id, schoolId },
+    include: {
+      requestedBy: { select: { id: true, firstName: true, lastName: true, email: true, role: true } },
+      approvedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+      lines: {
+        include: {
+          item: {
+            select: {
+              id: true,
+              name: true,
+              itemType: true,
+              quantityOnHand: true,
+              unit: true,
+            },
+          },
+        },
+      },
+      purchaseOrders: {
+        select: { id: true, poNumber: true, status: true, totalAmount: true, createdAt: true },
+      },
+      allocations: {
+        select: { id: true, status: true, quantity: true, issuedAt: true },
+      },
+    },
+  });
+
+  if (!request) throw new AppError("Inventory request not found", 404);
+  return request;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 10. PURCHASE ORDERS & PROCUREMENT CHAIN
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface POLineInput {
+  itemId?: string | null;
+  description: string;
+  quantityOrdered: number;
+  unitCost: number;
+}
+
+export interface CreatePurchaseOrderDTO {
+  supplierId: string;
+  requestId?: string | null;
+  status?: PurchaseOrderStatus;
+  expectedDeliveryDate?: string | Date | null;
+  currency?: string;
+  notes?: string | null;
+  lines: POLineInput[];
+}
+
+export async function createPurchaseOrder(
+  schoolId: string,
+  data: CreatePurchaseOrderDTO,
+  orderedById: string,
+  req?: Request,
+) {
+  // Validate Supplier
+  const supplier = await db.supplier.findFirst({
+    where: { id: data.supplierId, schoolId, isActive: true },
+  });
+  if (!supplier) throw new AppError("Supplier not found", 400);
+
+  // Validate Request if linked
+  if (data.requestId) {
+    const request = await db.inventoryRequest.findFirst({
+      where: { id: data.requestId, schoolId },
+    });
+    if (!request) throw new AppError("Linked inventory request not found", 400);
+  }
+
+  if (!data.lines || data.lines.length === 0) {
+    throw new AppError("At least one purchase order line is required", 400);
+  }
+
+  // Calculate total
+  const totalAmount = data.lines.reduce((sum, line) => {
+    const qty = Math.max(1, line.quantityOrdered);
+    const cost = Math.max(0, line.unitCost);
+    return sum + qty * cost;
+  }, 0);
+
+  // Auto-generate PO Number
+  const count = await db.purchaseOrder.count({ where: { schoolId } });
+  const year = new Date().getFullYear();
+  const poNumber = `PO-${year}-${String(count + 1).padStart(5, "0")}`;
+
+  const po = await db.$transaction(async (tx) => {
+    const createdPo = await tx.purchaseOrder.create({
+      data: {
+        schoolId,
+        poNumber,
+        supplierId: data.supplierId,
+        requestId: data.requestId || null,
+        status: data.status || PurchaseOrderStatus.DRAFT,
+        orderedById,
+        expectedDeliveryDate: data.expectedDeliveryDate ? new Date(data.expectedDeliveryDate) : null,
+        totalAmount,
+        currency: data.currency || "ETB",
+        notes: data.notes?.trim() || null,
+        lines: {
+          create: data.lines.map((l) => ({
+            itemId: l.itemId || null,
+            description: l.description.trim(),
+            quantityOrdered: Math.max(1, l.quantityOrdered),
+            quantityReceived: 0,
+            unitCost: Math.max(0, l.unitCost),
+          })),
+        },
+      },
+      include: {
+        supplier: true,
+        lines: { include: { item: true } },
+        orderedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+      },
+    });
+
+    return createdPo;
+  });
+
+  recordAuditEvent({
+    schoolId,
+    actorId: orderedById,
+    action: "PURCHASE_ORDER_CREATED",
+    targetType: "PURCHASE_ORDER",
+    targetId: po.id,
+    metadata: { poNumber: po.poNumber, totalAmount: po.totalAmount, supplierId: po.supplierId },
+    req,
+  }).catch(() => {});
+
+  return po;
+}
+
+export async function updatePurchaseOrder(
+  schoolId: string,
+  id: string,
+  data: Partial<CreatePurchaseOrderDTO>,
+  performedById: string,
+  req?: Request,
+) {
+  const existing = await db.purchaseOrder.findFirst({
+    where: { id, schoolId },
+    include: { lines: true },
+  });
+
+  if (!existing) throw new AppError("Purchase Order not found", 404);
+  if (existing.status !== PurchaseOrderStatus.DRAFT && existing.status !== PurchaseOrderStatus.SUBMITTED) {
+    throw new AppError(`Cannot update Purchase Order with status '${existing.status}'`, 400);
+  }
+
+  let totalAmount = existing.totalAmount;
+  if (data.lines && data.lines.length > 0) {
+    totalAmount = data.lines.reduce((sum, line) => sum + line.quantityOrdered * line.unitCost, 0);
+  }
+
+  const updated = await db.$transaction(async (tx) => {
+    if (data.lines && data.lines.length > 0) {
+      await tx.purchaseOrderLine.deleteMany({ where: { poId: id } });
+      await tx.purchaseOrderLine.createMany({
+        data: data.lines.map((l) => ({
+          poId: id,
+          itemId: l.itemId || null,
+          description: l.description.trim(),
+          quantityOrdered: Math.max(1, l.quantityOrdered),
+          quantityReceived: 0,
+          unitCost: Math.max(0, l.unitCost),
+        })),
+      });
+    }
+
+    const resPo = await tx.purchaseOrder.update({
+      where: { id },
+      data: {
+        ...(data.supplierId !== undefined && { supplierId: data.supplierId }),
+        ...(data.status !== undefined && { status: data.status }),
+        ...(data.expectedDeliveryDate !== undefined && {
+          expectedDeliveryDate: data.expectedDeliveryDate ? new Date(data.expectedDeliveryDate) : null,
+        }),
+        ...(data.currency !== undefined && { currency: data.currency }),
+        ...(data.notes !== undefined && { notes: data.notes?.trim() || null }),
+        totalAmount,
+      },
+      include: {
+        supplier: true,
+        lines: { include: { item: true } },
+        orderedBy: { select: { id: true, firstName: true, lastName: true } },
+      },
+    });
+
+    return resPo;
+  });
+
+  recordAuditEvent({
+    schoolId,
+    actorId: performedById,
+    action: "PURCHASE_ORDER_UPDATED",
+    targetType: "PURCHASE_ORDER",
+    targetId: id,
+    metadata: { poNumber: updated.poNumber, totalAmount: updated.totalAmount },
+    req,
+  }).catch(() => {});
+
+  return updated;
+}
+
+export async function approvePurchaseOrder(
+  schoolId: string,
+  poId: string,
+  approver: { id: string; role: Role; email: string },
+  req?: Request,
+) {
+  const po = await db.purchaseOrder.findFirst({
+    where: { id: poId, schoolId },
+  });
+
+  if (!po) throw new AppError("Purchase Order not found", 404);
+  if (po.status !== PurchaseOrderStatus.SUBMITTED && po.status !== PurchaseOrderStatus.DRAFT) {
+    throw new AppError(`Cannot approve Purchase Order with status '${po.status}'`, 400);
+  }
+
+  // Business Rule: Financial Approval Threshold
+  // Default threshold: 50,000 ETB. If totalAmount > threshold, FINANCE or SUPER_ADMIN approval is mandatory.
+  const APPROVAL_THRESHOLD = 50000;
+  if (po.totalAmount > APPROVAL_THRESHOLD) {
+    const isAuthorized =
+      approver.role === Role.FINANCE || approver.role === Role.SUPER_ADMIN;
+    if (!isAuthorized) {
+      throw new AppError(
+        `Purchase Order total (${po.totalAmount.toLocaleString()} ${po.currency}) exceeds threshold (${APPROVAL_THRESHOLD.toLocaleString()} ${po.currency}). Approval requires FINANCE or SUPER_ADMIN authority.`,
+        403,
+      );
+    }
+  }
+
+  const approvedPo = await db.purchaseOrder.update({
+    where: { id: poId },
+    data: {
+      status: PurchaseOrderStatus.APPROVED,
+      approvedById: approver.id,
+    },
+    include: {
+      supplier: true,
+      lines: true,
+      orderedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+      approvedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+    },
+  });
+
+  // Notify PO Creator
+  db.notification.create({
+    data: {
+      schoolId,
+      userId: po.orderedById,
+      type: "INVENTORY",
+      title: "Purchase Order Approved",
+      body: `Purchase Order ${po.poNumber} (${po.totalAmount.toLocaleString()} ${po.currency}) has been approved.`,
+      data: { poId: po.id, poNumber: po.poNumber },
+    },
+  }).catch(() => {});
+
+  recordAuditEvent({
+    schoolId,
+    actorId: approver.id,
+    action: "PURCHASE_ORDER_APPROVED",
+    targetType: "PURCHASE_ORDER",
+    targetId: poId,
+    metadata: { poNumber: po.poNumber, totalAmount: po.totalAmount, approverRole: approver.role },
+    req,
+  }).catch(() => {});
+
+  return approvedPo;
+}
+
+export async function orderPurchaseOrder(
+  schoolId: string,
+  poId: string,
+  performedById: string,
+  req?: Request,
+) {
+  const po = await db.purchaseOrder.findFirst({
+    where: { id: poId, schoolId },
+  });
+
+  if (!po) throw new AppError("Purchase Order not found", 404);
+  if (po.status !== PurchaseOrderStatus.APPROVED) {
+    throw new AppError("Only approved purchase orders can be marked as ORDERED", 400);
+  }
+
+  const orderedPo = await db.purchaseOrder.update({
+    where: { id: poId },
+    data: { status: PurchaseOrderStatus.ORDERED },
+    include: { supplier: true, lines: true },
+  });
+
+  recordAuditEvent({
+    schoolId,
+    actorId: performedById,
+    action: "PURCHASE_ORDER_ORDERED",
+    targetType: "PURCHASE_ORDER",
+    targetId: poId,
+    req,
+  }).catch(() => {});
+
+  return orderedPo;
+}
+
+export async function cancelPurchaseOrder(
+  schoolId: string,
+  poId: string,
+  performedById: string,
+  req?: Request,
+) {
+  const po = await db.purchaseOrder.findFirst({
+    where: { id: poId, schoolId },
+  });
+
+  if (!po) throw new AppError("Purchase Order not found", 404);
+  if (po.status === PurchaseOrderStatus.RECEIVED || po.status === PurchaseOrderStatus.PARTIALLY_RECEIVED) {
+    throw new AppError("Cannot cancel a purchase order that has already received goods", 400);
+  }
+
+  const cancelledPo = await db.purchaseOrder.update({
+    where: { id: poId },
+    data: { status: PurchaseOrderStatus.CANCELLED },
+  });
+
+  recordAuditEvent({
+    schoolId,
+    actorId: performedById,
+    action: "PURCHASE_ORDER_CANCELLED",
+    targetType: "PURCHASE_ORDER",
+    targetId: poId,
+    req,
+  }).catch(() => {});
+
+  return cancelledPo;
+}
+
+export async function getPurchaseOrders(
+  schoolId: string,
+  params?: {
+    supplierId?: string;
+    status?: PurchaseOrderStatus;
+    search?: string;
+    page?: number;
+    limit?: number;
+  },
+) {
+  const page = Math.max(1, params?.page || 1);
+  const limit = Math.min(100, Math.max(1, params?.limit || 20));
+  const skip = (page - 1) * limit;
+
+  const where: Prisma.PurchaseOrderWhereInput = {
+    schoolId,
+    ...(params?.supplierId && { supplierId: params.supplierId }),
+    ...(params?.status && { status: params.status }),
+    ...(params?.search && {
+      OR: [
+        { poNumber: { contains: params.search, mode: "insensitive" } },
+        { supplier: { name: { contains: params.search, mode: "insensitive" } } },
+        { notes: { contains: params.search, mode: "insensitive" } },
+      ],
+    }),
+  };
+
+  const [purchaseOrders, total] = await Promise.all([
+    db.purchaseOrder.findMany({
+      where,
+      skip,
+      take: limit,
+      include: {
+        supplier: { select: { id: true, name: true, contactName: true, phone: true, email: true } },
+        orderedBy: { select: { id: true, firstName: true, lastName: true } },
+        approvedBy: { select: { id: true, firstName: true, lastName: true } },
+        _count: { select: { lines: true, receipts: true } },
+      },
+      orderBy: [{ createdAt: "desc" }],
+    }),
+    db.purchaseOrder.count({ where }),
+  ]);
+
+  return { purchaseOrders, total, page, limit, totalPages: Math.ceil(total / limit) };
+}
+
+export async function getPurchaseOrderById(schoolId: string, id: string) {
+  const po = await db.purchaseOrder.findFirst({
+    where: { id, schoolId },
+    include: {
+      supplier: true,
+      request: {
+        select: { id: true, reason: true, status: true, requestedBy: { select: { firstName: true, lastName: true } } },
+      },
+      orderedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+      approvedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+      lines: {
+        include: {
+          item: { select: { id: true, name: true, itemType: true, sku: true, unit: true } },
+        },
+      },
+      receipts: {
+        include: {
+          receivedBy: { select: { id: true, firstName: true, lastName: true } },
+          location: { select: { id: true, name: true } },
+          lines: true,
+        },
+      },
+    },
+  });
+
+  if (!po) throw new AppError("Purchase Order not found", 404);
+  return po;
+}
+
 

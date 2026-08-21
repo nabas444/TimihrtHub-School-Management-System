@@ -6,6 +6,8 @@ import itemsRouter from "./inventory.items.routes";
 import allocationsRouter from "./inventory.allocations.routes";
 import goodsReceiptsRouter from "./inventory.goods-receipts.routes";
 import movementsRouter from "./inventory.movements.routes";
+import requestsRouter from "./inventory.requests.routes";
+import purchaseOrdersRouter from "./inventory.purchase-orders.routes";
 
 const router = Router();
 
@@ -19,5 +21,9 @@ router.use("/items", itemsRouter);
 router.use("/allocations", allocationsRouter);
 router.use("/goods-receipts", goodsReceiptsRouter);
 router.use("/movements", movementsRouter);
+
+// Phase 3 Sub-routers
+router.use("/requests", requestsRouter);
+router.use("/purchase-orders", purchaseOrdersRouter);
 
 export default router;
