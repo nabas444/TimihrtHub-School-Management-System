@@ -168,6 +168,14 @@ export default function ClubDetailPage() {
     enabled: registerMemberModalOpen,
   });
 
+  const { data: facultyCandidates, isLoading: facultyLoading } = useQuery({
+    queryKey: ["club-faculty-candidates"],
+    queryFn: () => api.get("/clubs/faculty-candidates").then((r) => r.data.data || []),
+    enabled: activeTab === "SETTINGS",
+  });
+
+  const [editClubForm, setEditClubForm] = useState(null);
+
   // ── Mutations ──────────────────────────────────────────────────────────────
   const invalidateClub = () => {
     qc.invalidateQueries({ queryKey: ["club-detail", clubId] });
@@ -325,6 +333,17 @@ export default function ClubDetailPage() {
     onSuccess: () => {
       invalidateClub();
       toast.success("Document removed");
+    },
+  });
+
+  const updateClubMutation = useMutation({
+    mutationFn: (d) => api.patch(`/clubs/${clubId}`, d),
+    onSuccess: () => {
+      invalidateClub();
+      toast.success("Club profile & advisor updated successfully!");
+    },
+    onError: (err) => {
+      toast.error(err.response?.data?.message || "Failed to update club profile");
     },
   });
 
@@ -1395,45 +1414,260 @@ export default function ClubDetailPage() {
           TAB 8: SETTINGS & RENEWAL
          ══════════════════════════════════════════════════════════════════════════ */}
       {activeTab === "SETTINGS" && permissions.canManageClub && (
-        <div className="card bg-white border border-gray-200 p-6 space-y-6 max-w-2xl">
-          <div>
-            <h3 className="font-extrabold text-base text-gray-900">
-              Club Administration & Status Controls
-            </h3>
-            <p className="text-xs text-gray-500">
-              Manage club lifecycle state, renewals, or archival.
-            </p>
+        <div className="space-y-6 max-w-2xl">
+          {/* Edit Club Profile & Advisor */}
+          <div className="card bg-white border border-gray-200 p-6 space-y-4">
+            <div>
+              <h3 className="font-extrabold text-base text-gray-900">
+                Club Profile & Advisor Assignment
+              </h3>
+              <p className="text-xs text-gray-500">
+                Update club details, meeting schedule, and assign or change the faculty advisor.
+              </p>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="label font-bold">Club Name *</label>
+                <input
+                  className="input text-xs"
+                  value={
+                    editClubForm !== null
+                      ? editClubForm.name
+                      : club.name || ""
+                  }
+                  onChange={(e) =>
+                    setEditClubForm((prev) => ({
+                      ...(prev || {
+                        name: club.name || "",
+                        description: club.description || "",
+                        purpose: club.purpose || "",
+                        category: club.category || "SCIENCE",
+                        advisorId: club.advisorId || club.advisor?.id || "",
+                        preferredMeetingSchedule: club.preferredMeetingSchedule || "",
+                        meetingLocation: club.meetingLocation || "",
+                      }),
+                      name: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="label font-bold">Category</label>
+                  <select
+                    className="input text-xs"
+                    value={
+                      editClubForm !== null
+                        ? editClubForm.category
+                        : club.category || "SCIENCE"
+                    }
+                    onChange={(e) =>
+                      setEditClubForm((prev) => ({
+                        ...(prev || {
+                          name: club.name || "",
+                          description: club.description || "",
+                          purpose: club.purpose || "",
+                          category: club.category || "SCIENCE",
+                          advisorId: club.advisorId || club.advisor?.id || "",
+                          preferredMeetingSchedule: club.preferredMeetingSchedule || "",
+                          meetingLocation: club.meetingLocation || "",
+                        }),
+                        category: e.target.value,
+                      }))
+                    }
+                  >
+                    {CLUB_CATEGORIES.filter((c) => c.id !== "ALL").map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.icon} {cat.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="label font-bold">Faculty / Staff Advisor</label>
+                  <select
+                    className="input text-xs"
+                    value={
+                      editClubForm !== null
+                        ? editClubForm.advisorId
+                        : club.advisorId || club.advisor?.id || ""
+                    }
+                    onChange={(e) =>
+                      setEditClubForm((prev) => ({
+                        ...(prev || {
+                          name: club.name || "",
+                          description: club.description || "",
+                          purpose: club.purpose || "",
+                          category: club.category || "SCIENCE",
+                          advisorId: club.advisorId || club.advisor?.id || "",
+                          preferredMeetingSchedule: club.preferredMeetingSchedule || "",
+                          meetingLocation: club.meetingLocation || "",
+                        }),
+                        advisorId: e.target.value || null,
+                      }))
+                    }
+                  >
+                    <option value="">None (Unassigned)</option>
+                    {(facultyCandidates ?? []).map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.firstName} {f.lastName} — {f.role} ({f.email})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="label font-bold">Meeting Schedule</label>
+                  <input
+                    className="input text-xs"
+                    placeholder="e.g. Every Thursday 4:00 PM"
+                    value={
+                      editClubForm !== null
+                        ? editClubForm.preferredMeetingSchedule
+                        : club.preferredMeetingSchedule || ""
+                    }
+                    onChange={(e) =>
+                      setEditClubForm((prev) => ({
+                        ...(prev || {
+                          name: club.name || "",
+                          description: club.description || "",
+                          purpose: club.purpose || "",
+                          category: club.category || "SCIENCE",
+                          advisorId: club.advisorId || club.advisor?.id || "",
+                          preferredMeetingSchedule: club.preferredMeetingSchedule || "",
+                          meetingLocation: club.meetingLocation || "",
+                        }),
+                        preferredMeetingSchedule: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <label className="label font-bold">Meeting Room / Location</label>
+                  <input
+                    className="input text-xs"
+                    placeholder="e.g. Lab 2, Library Hall"
+                    value={
+                      editClubForm !== null
+                        ? editClubForm.meetingLocation
+                        : club.meetingLocation || ""
+                    }
+                    onChange={(e) =>
+                      setEditClubForm((prev) => ({
+                        ...(prev || {
+                          name: club.name || "",
+                          description: club.description || "",
+                          purpose: club.purpose || "",
+                          category: club.category || "SCIENCE",
+                          advisorId: club.advisorId || club.advisor?.id || "",
+                          preferredMeetingSchedule: club.preferredMeetingSchedule || "",
+                          meetingLocation: club.meetingLocation || "",
+                        }),
+                        meetingLocation: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="label font-bold">Mission, Purpose & Goals</label>
+                <textarea
+                  className="input text-xs min-h-16 resize-none"
+                  value={
+                    editClubForm !== null
+                      ? editClubForm.purpose
+                      : club.purpose || ""
+                  }
+                  onChange={(e) =>
+                    setEditClubForm((prev) => ({
+                      ...(prev || {
+                        name: club.name || "",
+                        description: club.description || "",
+                        purpose: club.purpose || "",
+                        category: club.category || "SCIENCE",
+                        advisorId: club.advisorId || club.advisor?.id || "",
+                        preferredMeetingSchedule: club.preferredMeetingSchedule || "",
+                        meetingLocation: club.meetingLocation || "",
+                      }),
+                      purpose: e.target.value,
+                      description: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button
+                  className="btn-primary inline-flex items-center gap-1.5 text-xs"
+                  onClick={() => {
+                    const payload = editClubForm || {
+                      name: club.name,
+                      description: club.description,
+                      purpose: club.purpose,
+                      category: club.category,
+                      advisorId: club.advisorId || club.advisor?.id || null,
+                      preferredMeetingSchedule: club.preferredMeetingSchedule,
+                      meetingLocation: club.meetingLocation,
+                    };
+                    updateClubMutation.mutate(payload);
+                  }}
+                  disabled={updateClubMutation.isPending}
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  {updateClubMutation.isPending ? "Saving Changes…" : "Save Club Settings"}
+                </button>
+              </div>
+            </div>
           </div>
 
-          <div className="p-4 bg-gray-50 rounded-xl space-y-3 text-xs">
-            <h4 className="font-bold text-gray-800">Club Lifecycle Action</h4>
-            <div className="flex items-center gap-2 flex-wrap">
-              {isAdmin() && (
-                <>
-                  {club.status !== "ACTIVE" && (
+          {/* Status Controls */}
+          <div className="card bg-white border border-gray-200 p-6 space-y-4">
+            <div>
+              <h3 className="font-extrabold text-base text-gray-900">
+                Club Administration & Status Controls
+              </h3>
+              <p className="text-xs text-gray-500">
+                Manage club lifecycle state, renewals, or archival.
+              </p>
+            </div>
+
+            <div className="p-4 bg-gray-50 rounded-xl space-y-3 text-xs">
+              <h4 className="font-bold text-gray-800">Club Lifecycle Action</h4>
+              <div className="flex items-center gap-2 flex-wrap">
+                {isAdmin() && (
+                  <>
+                    {club.status !== "ACTIVE" && (
+                      <button
+                        className="btn-primary btn-sm text-xs"
+                        onClick={() => updateClubStatusMutation.mutate("ACTIVE")}
+                      >
+                        Set Status: Active
+                      </button>
+                    )}
+                    {club.status === "ACTIVE" && (
+                      <button
+                        className="btn-danger btn-sm text-xs"
+                        onClick={() => updateClubStatusMutation.mutate("SUSPENDED")}
+                      >
+                        Suspend Club
+                      </button>
+                    )}
                     <button
-                      className="btn-primary btn-sm text-xs"
-                      onClick={() => updateClubStatusMutation.mutate("ACTIVE")}
+                      className="btn-secondary btn-sm text-xs"
+                      onClick={() => updateClubStatusMutation.mutate("ARCHIVED")}
                     >
-                      Set Status: Active
+                      Archive Club
                     </button>
-                  )}
-                  {club.status === "ACTIVE" && (
-                    <button
-                      className="btn-danger btn-sm text-xs"
-                      onClick={() => updateClubStatusMutation.mutate("SUSPENDED")}
-                    >
-                      Suspend Club
-                    </button>
-                  )}
-                  <button
-                    className="btn-secondary btn-sm text-xs"
-                    onClick={() => updateClubStatusMutation.mutate("ARCHIVED")}
-                  >
-                    Archive Club
-                  </button>
-                </>
-              )}
+                  </>
+                )}
+              </div>
             </div>
           </div>
         </div>

@@ -25,6 +25,7 @@ import {
   Trash2,
   Send,
   BookOpen,
+  Download,
 } from "lucide-react";
 import api from "../../lib/api";
 import { Badge, EmptyState, Pagination } from "../../components/ui/index";
@@ -236,6 +237,29 @@ export default function ExamsPage() {
       venue: exam.venue || "",
       instructions: exam.instructions || "",
     });
+  const [downloadingMarksheetId, setDownloadingMarksheetId] = useState(null);
+
+  const handleDownloadMarksheet = async (exam) => {
+    try {
+      setDownloadingMarksheetId(exam.id);
+      const res = await api.get(`/academics/exams/${exam.id}/marksheet`, {
+        responseType: "blob",
+      });
+      const blob = new Blob([res.data], { type: "application/pdf" });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `marksheet-${exam.subject?.code || "exam"}-${(exam.title || "sheet").replace(/\s+/g, "-")}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      toast.success("Marksheet downloaded successfully");
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Failed to download exam marksheet PDF");
+    } finally {
+      setDownloadingMarksheetId(null);
+    }
   };
 
   const activeFiltersCount = useMemo(() => {
@@ -771,6 +795,18 @@ export default function ExamsPage() {
                   </span>
 
                   <div className="flex items-center gap-1.5">
+                    <button
+                      className="btn-ghost p-1 text-gray-600 hover:text-emerald-700 hover:bg-emerald-50 rounded text-xs inline-flex items-center gap-1"
+                      onClick={() => handleDownloadMarksheet(e)}
+                      disabled={downloadingMarksheetId === e.id}
+                      title="Download PDF Marksheet"
+                    >
+                      <Download className="w-3.5 h-3.5 text-emerald-600" />
+                      <span className="hidden sm:inline text-[11px] font-semibold">
+                        {downloadingMarksheetId === e.id ? "Downloading…" : "Marksheet"}
+                      </span>
+                    </button>
+
                     {canCreate && !e.isPublished && (
                       <button
                         className="btn-primary btn-sm text-xs py-1 px-2.5 inline-flex items-center gap-1"
@@ -887,6 +923,15 @@ export default function ExamsPage() {
                       </td>
                       <td className="py-3.5 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            className="btn-ghost p-1 text-gray-500 hover:text-emerald-700 hover:bg-emerald-50 rounded"
+                            onClick={() => handleDownloadMarksheet(e)}
+                            disabled={downloadingMarksheetId === e.id}
+                            title="Download PDF Marksheet"
+                          >
+                            <Download className="w-3.5 h-3.5 text-emerald-600" />
+                          </button>
+
                           {canCreate && !e.isPublished && (
                             <button
                               className="btn-primary btn-sm text-xs py-1 px-2"

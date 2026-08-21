@@ -25,9 +25,9 @@ export default function ProposeClubModal({ open, onClose }) {
     bannerUrl: "",
   });
 
-  const { data: teachers } = useQuery({
-    queryKey: ["teachers-list"],
-    queryFn: () => api.get("/staff?role=TEACHER").then((r) => r.data.data),
+  const { data: facultyCandidates, isLoading: facultyLoading } = useQuery({
+    queryKey: ["club-faculty-candidates"],
+    queryFn: () => api.get("/clubs/faculty-candidates").then((r) => r.data.data || []),
     enabled: open,
   });
 
@@ -152,7 +152,7 @@ export default function ProposeClubModal({ open, onClose }) {
         </div>
 
         <div>
-          <label className="label font-bold">Nominated Faculty Advisor</label>
+          <label className="label font-bold">Faculty / Staff Advisor</label>
           <select
             className="input text-xs"
             value={form.advisorId}
@@ -161,9 +161,9 @@ export default function ProposeClubModal({ open, onClose }) {
             }
           >
             <option value="">Select Faculty / Staff Advisor</option>
-            {(teachers ?? []).map((t) => (
+            {(facultyCandidates ?? []).map((t) => (
               <option key={t.id} value={t.id}>
-                {t.firstName} {t.lastName} ({t.email})
+                {t.firstName} {t.lastName} — {t.role} ({t.email})
               </option>
             ))}
           </select>
