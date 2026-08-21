@@ -34,6 +34,7 @@ import {
   Sparkles,
   Award,
   HeartHandshake,
+  Shield,
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -65,6 +66,7 @@ const NAV_CONFIG = {
         },
         { to: "/timetable", icon: Calendar, label: "nav.timetable" },
         { to: "/annual-plans", icon: FileText, label: "nav.annual_plans" },
+        { to: "/curriculum", icon: BookOpen, label: "nav.curriculum" },
         {
           icon: CalendarCheck,
           label: "nav.attendance",
@@ -132,6 +134,7 @@ const NAV_CONFIG = {
           ],
         },
         { to: "/files", icon: FileText, label: "nav.files" },
+        { to: "/policies", icon: Shield, label: "nav.policies" },
         { to: "/ai", icon: Brain, label: "nav.ai_insights" },
       ],
     },
@@ -169,6 +172,7 @@ const NAV_CONFIG = {
         },
         { to: "/timetable", icon: Calendar, label: "nav.timetable" },
         { to: "/annual-plans", icon: FileText, label: "nav.annual_plans" },
+        { to: "/curriculum", icon: BookOpen, label: "nav.curriculum" },
         {
           icon: CalendarCheck,
           label: "nav.attendance",
@@ -212,6 +216,7 @@ const NAV_CONFIG = {
         },
         { to: "/certificates/mine", icon: Award, label: "nav.my_certificates" },
         { to: "/files", icon: FileText, label: "nav.files" },
+        { to: "/policies", icon: Shield, label: "nav.policies" },
         { to: "/library", icon: Library, label: "nav.library" },
         {
           to: "/staff/leave",
@@ -255,6 +260,7 @@ const NAV_CONFIG = {
       items: [
         { to: "/chat", icon: MessageSquare, label: "nav.chat", badge: "chat" },
         { to: "/announcements", icon: Megaphone, label: "nav.announcements" },
+        { to: "/policies", icon: Shield, label: "nav.policies" },
       ],
     },
     {
@@ -306,6 +312,7 @@ const NAV_CONFIG = {
         { to: "/certificates/mine", icon: Award, label: "nav.my_certificates" },
         { to: "/student-support/my-support", icon: HeartHandshake, label: "nav.my_support" },
         { to: "/files", icon: FileText, label: "nav.resources" },
+        { to: "/policies", icon: Shield, label: "nav.policies_acknowledgments" },
         { to: "/library", icon: Library, label: "nav.library" },
         { to: "/fees", icon: DollarSign, label: "nav.my_fees" },
         { to: "/ai", icon: Brain, label: "nav.ai_tutor" },
@@ -363,7 +370,10 @@ const NAV_CONFIG = {
     },
     {
       section: "nav.section_admin",
-      items: [{ to: "/fees", icon: DollarSign, label: "nav.fees_payments" }],
+      items: [
+        { to: "/fees", icon: DollarSign, label: "nav.fees_payments" },
+        { to: "/policies", icon: Shield, label: "nav.policies_acknowledgments" },
+      ],
     },
     {
       section: "nav.section_settings",

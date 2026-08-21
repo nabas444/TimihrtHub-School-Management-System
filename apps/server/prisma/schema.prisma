@@ -155,6 +155,8 @@ enum NotificationType {
   FEE
   MEETING
   ANNUAL_PLAN
+  CURRICULUM
+  POLICY
   GENERAL
 }
 
@@ -174,6 +176,42 @@ enum AnnualPlanStatus {
   SUBMITTED
   APPROVED
   REVISION_REQUESTED
+}
+
+enum CurriculumUnitStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REVISION_REQUESTED
+}
+
+enum PolicyCategory {
+  SAFEGUARDING
+  CODE_OF_CONDUCT
+  ASSESSMENT
+  ADMISSIONS
+  HEALTH_SAFETY
+  DATA_PROTECTION
+  ANTI_BULLYING
+  HR_EMPLOYMENT
+  OTHER
+}
+
+enum PolicyStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REVISION_REQUESTED
+  PUBLISHED
+  ARCHIVED
+}
+
+enum PolicyTargetAudience {
+  ALL
+  ALL_STAFF
+  TEACHERS
+  STUDENTS
+  PARENTS
 }
 
 enum MeetingStatus {
@@ -428,6 +466,13 @@ model School {
   staffDisciplinaryRecords StaffDisciplinaryRecord[]
   offboardingRecords    OffboardingRecord[]
 
+  // Curriculum & Policies
+  curriculumStandards   CurriculumStandard[]
+  curriculumUnits       CurriculumUnit[]
+  policies              Policy[]
+  policyVersions        PolicyVersion[]
+  policyAcknowledgments PolicyAcknowledgment[]
+
   @@map("schools")
 }
 
@@ -576,6 +621,16 @@ model User {
   interviewFeedbacks          InterviewFeedback[]   @relation("FeedbackInterviewer")
   performanceReviewsAuthored  PerformanceReview[]   @relation("PerformanceReviewer")
 
+  // Curriculum & Policies
+  createdCurriculumUnits        CurriculumUnit[]        @relation("CurriculumUnitCreator")
+  reviewedCurriculumUnits       CurriculumUnit[]        @relation("CurriculumUnitReviewer")
+  createdCurriculumUnitVersions CurriculumUnitVersion[] @relation("CurriculumUnitVersionCreator")
+  ownedPolicies                 Policy[]                @relation("PolicyOwner")
+  createdPolicies               Policy[]                @relation("PolicyCreator")
+  createdPolicyVersions         PolicyVersion[]         @relation("PolicyVersionCreator")
+  reviewedPolicyVersions        PolicyVersion[]         @relation("PolicyVersionReviewer")
+  policyAcknowledgments         PolicyAcknowledgment[]
+
   school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
 
   @@unique([schoolId, email])
@@ -710,6 +765,7 @@ model TeacherProfile {
   payrollRecords   PayrollRecord[]
   annualPlans      AnnualPlan[]
   tutorialSessions TutorialSession[]
+  curriculumUnits  CurriculumUnit[]
 
   religion         LookupValue?      @relation("TeacherReligion", fields: [religionId], references: [id])
   house            LookupValue?      @relation("TeacherHouse", fields: [houseId], references: [id])
@@ -784,6 +840,8 @@ model GradeLevel {
   tutorialSessions        TutorialSession[]
   externalExamCheckpoints ExternalExamCheckpoint[]
   ceremonyEvents          CeremonyEvent[]
+  curriculumStandards     CurriculumStandard[]
+  curriculumUnits         CurriculumUnit[]
 
   @@unique([schoolId, level])
   @@map("grade_levels")
@@ -856,6 +914,8 @@ model Subject {
   exams            Exam[]
   annualPlans      AnnualPlan[]
   tutorialSessions TutorialSession[]
+  curriculumStandards CurriculumStandard[]
+  curriculumUnits  CurriculumUnit[]
 
   @@unique([schoolId, code])
   @@map("subjects")
@@ -1342,6 +1402,10 @@ model LookupValue {
   requisitionPositions   JobRequisition[] @relation("RequisitionPosition")
   postingDepartments     JobPosting[]     @relation("PostingDepartment")
   postingPositions       JobPosting[]     @relation("PostingPosition")
+
+  // Curriculum
+  curriculumStandards    CurriculumStandard[] @relation("StandardCurriculum")
+  curriculumUnits        CurriculumUnit[]     @relation("UnitCurriculum")
 
   @@index([schoolId, type])
   @@map("lookup_values")
@@ -2261,4 +2325,193 @@ model ExitChecklistItem {
 
   @@map("exit_checklist_items")
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CURRICULUM MAPPING & LEARNING STANDARDS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model CurriculumStandard {
+  id           String       @id @default(uuid())
+  schoolId     String
+  subjectId    String
+  gradeLevelId String?
+  curriculumId String?      // LookupValue CURRICULUM
+  code         String       // e.g. "SC8.1", "ENG.L.7.1"
+  title        String       // e.g. "Explain the water cycle"
+  description  String?
+  category     String?      // e.g. "Earth & Space Sciences"
+  isActive     Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  school       School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  gradeLevel   GradeLevel?  @relation(fields: [gradeLevelId], references: [id], onDelete: SetNull)
+  curriculum   LookupValue? @relation("StandardCurriculum", fields: [curriculumId], references: [id], onDelete: SetNull)
+
+  unitStandards CurriculumUnitStandard[]
+
+  @@unique([schoolId, subjectId, code])
+  @@index([schoolId, subjectId, gradeLevelId])
+  @@map("curriculum_standards")
+}
+
+model CurriculumUnit {
+  id               String               @id @default(uuid())
+  schoolId         String
+  subjectId        String
+  gradeLevelId     String
+  curriculumId     String?              // LookupValue CURRICULUM
+  academicYear     String
+  unitNumber       Int                  @default(1)
+  title            String
+  description      String?
+  durationWeeks    Int?
+  startDate        DateTime?
+  endDate          DateTime?
+  learningObjectives Json?              // Array of objectives / competencies
+  assessmentMethod String?
+  keyResources     Json?                // Array of attached/linked resources [{ name, url, fileId, type }]
+  status           CurriculumUnitStatus @default(DRAFT)
+  createdById      String
+  teacherProfileId String?
+  submittedAt      DateTime?
+  reviewedById     String?
+  reviewedAt       DateTime?
+  reviewNotes      String?
+  currentVersion   Int                  @default(1)
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  school         School                   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  subject        Subject                  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  gradeLevel     GradeLevel               @relation(fields: [gradeLevelId], references: [id], onDelete: Cascade)
+  curriculum     LookupValue?             @relation("UnitCurriculum", fields: [curriculumId], references: [id], onDelete: SetNull)
+  createdBy      User                     @relation("CurriculumUnitCreator", fields: [createdById], references: [id])
+  teacherProfile TeacherProfile?          @relation(fields: [teacherProfileId], references: [id], onDelete: SetNull)
+  reviewedBy     User?                    @relation("CurriculumUnitReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  unitStandards  CurriculumUnitStandard[]
+  versions       CurriculumUnitVersion[]
+
+  @@index([schoolId, subjectId, gradeLevelId, academicYear])
+  @@map("curriculum_units")
+}
+
+model CurriculumUnitStandard {
+  id               String             @id @default(uuid())
+  curriculumUnitId String
+  standardId       String
+  createdAt        DateTime           @default(now())
+
+  curriculumUnit   CurriculumUnit     @relation(fields: [curriculumUnitId], references: [id], onDelete: Cascade)
+  standard         CurriculumStandard @relation(fields: [standardId], references: [id], onDelete: Cascade)
+
+  @@unique([curriculumUnitId, standardId])
+  @@map("curriculum_unit_standards")
+}
+
+model CurriculumUnitVersion {
+  id               String         @id @default(uuid())
+  curriculumUnitId String
+  versionNumber    Int
+  snapshot         Json           // Snapshot of title, description, objectives, assessmentMethod, keyResources, standards
+  changeSummary    String?
+  createdById      String
+  createdAt        DateTime       @default(now())
+
+  curriculumUnit   CurriculumUnit @relation(fields: [curriculumUnitId], references: [id], onDelete: Cascade)
+  createdBy        User           @relation("CurriculumUnitVersionCreator", fields: [createdById], references: [id])
+
+  @@index([curriculumUnitId, versionNumber])
+  @@map("curriculum_unit_versions")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POLICY MANAGEMENT & COMPLIANCE
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Policy {
+  id                   String               @id @default(uuid())
+  schoolId             String
+  category             PolicyCategory       @default(OTHER)
+  title                String
+  summary              String?
+  ownerId              String               // User.id of staff member responsible
+  targetAudience       PolicyTargetAudience @default(ALL_STAFF)
+  isPubliclyVisible    Boolean              @default(false)
+  nextReviewDate       DateTime?
+  reviewIntervalMonths Int                  @default(12)
+  status               PolicyStatus         @default(DRAFT)
+  currentVersionId     String?
+  createdById          String
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+
+  school          School                 @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  owner           User                   @relation("PolicyOwner", fields: [ownerId], references: [id])
+  createdBy       User                   @relation("PolicyCreator", fields: [createdById], references: [id])
+
+  versions        PolicyVersion[]
+  acknowledgments PolicyAcknowledgment[]
+
+  @@index([schoolId, category, status])
+  @@map("policies")
+}
+
+model PolicyVersion {
+  id               String               @id @default(uuid())
+  schoolId         String
+  policyId         String
+  versionNumber    String               // e.g. "1.0", "1.1", "2.0"
+  content          String               // Markdown / formatted content
+  attachmentUrl    String?
+  attachmentFileId String?
+  changeSummary    String?
+  status           PolicyStatus         @default(DRAFT)
+  createdById      String
+  submittedAt      DateTime?
+  reviewedById     String?
+  reviewedAt       DateTime?
+  reviewNotes      String?
+  publishedAt      DateTime?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  school          School                 @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  policy          Policy                 @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  createdBy       User                   @relation("PolicyVersionCreator", fields: [createdById], references: [id])
+  reviewedBy      User?                  @relation("PolicyVersionReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  acknowledgments PolicyAcknowledgment[]
+
+  @@unique([policyId, versionNumber])
+  @@index([policyId, status])
+  @@map("policy_versions")
+}
+
+model PolicyAcknowledgment {
+  id              String        @id @default(uuid())
+  schoolId        String
+  policyId        String
+  policyVersionId String
+  userId          String
+  isAcknowledged  Boolean       @default(false)
+  acknowledgedAt  DateTime?
+  ipAddress       String?
+  userAgent       String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  school          School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  policy          Policy        @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  policyVersion   PolicyVersion @relation(fields: [policyVersionId], references: [id], onDelete: Cascade)
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([policyVersionId, userId])
+  @@index([userId, isAcknowledged])
+  @@index([policyId, isAcknowledged])
+  @@map("policy_acknowledgments")
+}
+
 

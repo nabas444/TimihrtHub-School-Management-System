@@ -138,6 +138,9 @@ const HRDashboardPage = lazy(() => import("../features/hr/HRDashboardPage"));
 const RecruitingPage = lazy(() => import("../features/recruiting/RecruitingPage"));
 const PublicJobBoardPage = lazy(() => import("../features/recruiting/PublicJobBoardPage"));
 const LeavePage = lazy(() => import("../features/staff/LeavePage"));
+const CurriculumPage = lazy(() => import("../features/curriculum/CurriculumPage"));
+const PoliciesPage = lazy(() => import("../features/policies/PoliciesPage"));
+const PolicyDetailPage = lazy(() => import("../features/policies/PolicyDetailPage"));
 const AIInsightsPage = lazy(() => import("../features/ai/AIInsightsPage"));
 const ProfilePage = lazy(() => import("../features/settings/ProfilePage"));
 const SchoolSettingsPage = lazy(
@@ -662,6 +665,40 @@ export const router = createBrowserRouter([
             <StaffRoute>
               <AnnualPlanEditorPage />
             </StaffRoute>
+          </S>
+        ),
+      },
+      {
+        path: "/curriculum",
+        element: (
+          <S>
+            <StaffRoute>
+              <CurriculumPage />
+            </StaffRoute>
+          </S>
+        ),
+      },
+      {
+        path: "/policies",
+        element: (
+          <S>
+            <PoliciesPage />
+          </S>
+        ),
+      },
+      {
+        path: "/policies/:id",
+        element: (
+          <S>
+            <PolicyDetailPage />
+          </S>
+        ),
+      },
+      {
+        path: "/policies/my-acknowledgments",
+        element: (
+          <S>
+            <PoliciesPage />
           </S>
         ),
       },

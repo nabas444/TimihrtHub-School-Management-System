@@ -57,7 +57,7 @@ async function dispatchDeadlineNotification(params: {
   title: string;
   body: string;
   taskId: string;
-  taskType: "ASSIGNMENT" | "ATTENDANCE" | "RESULT" | "ROSTER" | "BEHAVIOUR";
+  taskType: "ASSIGNMENT" | "ATTENDANCE" | "RESULT" | "ROSTER" | "BEHAVIOUR" | "POLICY";
   stage: string;
   link?: string;
   assignmentId?: string;
@@ -463,6 +463,67 @@ export async function runDeadlineEngineCycle() {
             }
           }
         }
+      }
+
+      // ─────────────────────────────────────────────────────────────
+      // 4. POLICY SCHEDULED REVIEW DUE REMINDERS
+      // ─────────────────────────────────────────────────────────────
+      try {
+        const expiringPolicies: any[] = await db.$queryRawUnsafe(
+          `
+          SELECT
+            p.id,
+            p.title,
+            p.category,
+            p.next_review_date,
+            p.owner_id,
+            u."firstName",
+            u."lastName"
+          FROM policies p
+          JOIN users u ON p.owner_id = u.id
+          WHERE p.school_id = $1
+            AND p.status = 'PUBLISHED'
+            AND p.next_review_date IS NOT NULL
+            AND p.next_review_date <= (NOW() + INTERVAL '30 days')
+        `,
+          school.id,
+        );
+
+        for (const policy of expiringPolicies) {
+          const reviewDate = new Date(policy.next_review_date);
+          const evalPolicy = evaluateDeadline(reviewDate, timezone);
+          const taskId = `POLICY_REVIEW_${policy.id}`;
+
+          if (evalPolicy.status === "OVERDUE") {
+            await dispatchDeadlineNotification({
+              schoolId: school.id,
+              userId: policy.owner_id,
+              type: NotificationType.POLICY,
+              priority: "URGENT",
+              title: "🔴 Policy Review Overdue",
+              body: `School policy "${policy.title}" was due for scheduled re-review on ${evalPolicy.formattedDueDate}. Please draft an updated version.`,
+              taskId,
+              taskType: "POLICY",
+              stage: "POLICY_REVIEW_OVERDUE",
+              link: `/policies/${policy.id}`,
+            });
+          } else if (evalPolicy.daysRemaining <= 30) {
+            await dispatchDeadlineNotification({
+              schoolId: school.id,
+              userId: policy.owner_id,
+              type: NotificationType.POLICY,
+              priority: "IMPORTANT",
+              title: "🟡 Policy Review Approaching",
+              body: `Scheduled compliance review for policy "${policy.title}" is due on ${evalPolicy.formattedDueDate}.`,
+              taskId,
+              taskType: "POLICY",
+              stage: "POLICY_REVIEW_APPROACHING",
+              link: `/policies/${policy.id}`,
+            });
+          }
+        }
+      } catch (policyErr) {
+        // Safe fallback if policy tables are not initialized yet
       }
     }
   } catch (err) {

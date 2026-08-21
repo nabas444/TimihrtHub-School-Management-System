@@ -101,7 +101,7 @@ export default function FilesPage() {
 
       {/* Filters */}
       <div className="flex gap-2 flex-wrap">
-        {["", "SYLLABUS", "RESOURCE", "REPORT", "OTHER"].map((c) => (
+        {["", "RESOURCE", "REPORT", "OTHER"].map((c) => (
           <button
             key={c}
             onClick={() => setCategory(c)}

@@ -48,6 +48,8 @@ import ceremonyRoutes from "./modules/ceremonies/ceremonies.routes";
 import employeeRoutes from "./modules/employees/employees.routes";
 import { protectedRecruitingRouter as recruitingRoutes, publicRecruitingRouter } from "./modules/recruiting/recruiting.routes";
 import parentRoutes from "./modules/parents/parents.routes";
+import curriculumRoutes from "./modules/curriculum/curriculum.routes";
+import policyRoutes, { publicPoliciesRouter } from "./modules/policies/policies.routes";
 
 // ── Background job workers ───────────────────────────────────────────────────
 // Importing these starts their BullMQ Worker instances (side effect on import).
@@ -133,6 +135,7 @@ app.get("/", (_, res) => {
 // Public (no auth required)
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/recruiting/public", publicRecruitingRouter);
+app.use("/api/v1/policies/public", publicPoliciesRouter);
 
 // Protected (auth + tenant guard applied globally)
 app.use("/api/v1", authenticate, tenantGuard);
@@ -173,6 +176,11 @@ app.use("/api/v1/external-exam-records", externalExamRoutes);
 app.use("/api/v1/ceremonies", ceremonyRoutes);
 app.use("/api/v1/ceremony-events", ceremonyRoutes);
 app.use("/api/v1/ceremony-participants", ceremonyRoutes);
+app.use("/api/v1/curriculum", curriculumRoutes);
+app.use("/api/v1/curriculum-standards", curriculumRoutes);
+app.use("/api/v1/curriculum-units", curriculumRoutes);
+app.use("/api/v1/policies", policyRoutes);
+app.use("/api/v1/policy-versions", policyRoutes);
 
 // ── 404 + Error handlers ─────────────────────────────────────────────────────
 app.use(notFoundHandler);
