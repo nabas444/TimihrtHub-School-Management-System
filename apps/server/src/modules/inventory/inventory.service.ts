@@ -1291,7 +1291,7 @@ export async function issueAllocation(
           data: {
             schoolId,
             userId: adm.id,
-            type: "INVENTORY",
+            type: NotificationType.INVENTORY,
             title: `Low Stock Alert: ${item.name}`,
             body: `Stock for '${item.name}' is now ${newStock} ${item.unit} (reorder point: ${item.reorderPoint}).`,
             data: { itemId: item.id, quantityOnHand: newStock, reorderPoint: item.reorderPoint },
@@ -1725,7 +1725,7 @@ export async function createGoodsReceipt(
     const receipt = await tx.goodsReceipt.create({
       data: {
         schoolId,
-        poId: data.poId || (purchaseOrder?.id ?? ""),
+        poId: data.poId || (purchaseOrder?.id ?? null),
         receivedById,
         locationId: data.locationId,
         notes: data.notes?.trim() || null,
@@ -1802,17 +1802,17 @@ export async function createGoodsReceipt(
           where: { id: line.poLineId },
           data: { quantityReceived: { increment: qty } },
         });
-
-        await tx.goodsReceiptLine.create({
-          data: {
-            receiptId: receipt.id,
-            poLineId: line.poLineId,
-            quantityReceived: qty,
-            conditionOnArrival: line.conditionOnArrival || ItemCondition.NEW,
-            serialNumbers: line.serialNumbers || [],
-          },
-        });
       }
+
+      await tx.goodsReceiptLine.create({
+        data: {
+          receiptId: receipt.id,
+          poLineId: line.poLineId || null,
+          quantityReceived: qty,
+          conditionOnArrival: line.conditionOnArrival || ItemCondition.NEW,
+          serialNumbers: line.serialNumbers || [],
+        },
+      });
     }
 
     // 4. Update PO status if linked
@@ -2017,7 +2017,7 @@ export async function approveInventoryRequest(
     data: {
       schoolId,
       userId: existing.requestedById,
-      type: "INVENTORY",
+      type: NotificationType.INVENTORY,
       title: "Requisition Approved",
       body: `Your inventory request for "${existing.reason}" has been approved.`,
       data: { requestId: existing.id },
@@ -2071,7 +2071,7 @@ export async function rejectInventoryRequest(
     data: {
       schoolId,
       userId: existing.requestedById,
-      type: "INVENTORY",
+      type: NotificationType.INVENTORY,
       title: "Requisition Rejected",
       body: `Your inventory request was rejected: ${rejectionReason}`,
       data: { requestId: existing.id, rejectionReason },
@@ -2391,7 +2391,7 @@ export async function approvePurchaseOrder(
     data: {
       schoolId,
       userId: po.orderedById,
-      type: "INVENTORY",
+      type: NotificationType.INVENTORY,
       title: "Purchase Order Approved",
       body: `Purchase Order ${po.poNumber} (${po.totalAmount.toLocaleString()} ${po.currency}) has been approved.`,
       data: { poId: po.id, poNumber: po.poNumber },
