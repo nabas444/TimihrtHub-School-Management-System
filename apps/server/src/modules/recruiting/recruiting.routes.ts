@@ -145,9 +145,11 @@ publicRecruitingRouter.get("/:schoolSlug/jobs/:idOrSlug", async (req: Request, r
     const posting = await db.jobPosting.findFirst({
       where: {
         schoolId: school.id,
-        OR: [{ id: idOrSlug }, { slug: idOrSlug }],
         status: PostingStatus.PUBLISHED,
-        OR: [{ closingDate: null }, { closingDate: { gte: new Date() } }],
+        AND: [
+          { OR: [{ id: idOrSlug }, { slug: idOrSlug }] },
+          { OR: [{ closingDate: null }, { closingDate: { gte: new Date() } }] },
+        ],
       },
       include: {
         department: { select: { value: true } },
@@ -197,9 +199,11 @@ publicRecruitingRouter.get("/:schoolSlug/jobs/:idOrSlug/flyer.pdf", async (req: 
     const posting = await db.jobPosting.findFirst({
       where: {
         schoolId: school.id,
-        OR: [{ id: idOrSlug }, { slug: idOrSlug }],
         status: PostingStatus.PUBLISHED,
-        OR: [{ closingDate: null }, { closingDate: { gte: new Date() } }],
+        AND: [
+          { OR: [{ id: idOrSlug }, { slug: idOrSlug }] },
+          { OR: [{ closingDate: null }, { closingDate: { gte: new Date() } }] },
+        ],
       },
       include: {
         department: { select: { value: true } },

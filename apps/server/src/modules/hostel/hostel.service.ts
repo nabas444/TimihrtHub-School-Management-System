@@ -280,12 +280,12 @@ export async function calculateApplicationPriorityScore(
     const parentLinks = await db.parentStudentLink.findMany({
       where: { studentProfileId },
       include: {
-        parent: {
+        parentProfile: {
           include: {
             studentLinks: {
               where: { studentProfileId: { not: studentProfileId } },
               include: {
-                student: {
+                studentProfile: {
                   include: {
                     hostelAllocations: {
                       where: { status: AllocationStatus.ACTIVE },
@@ -299,8 +299,8 @@ export async function calculateApplicationPriorityScore(
       },
     });
 
-    const hasActiveSibling = parentLinks.some((pl) =>
-      pl.parent.studentLinks.some((sl) => sl.student.hostelAllocations.length > 0),
+    const hasActiveSibling = parentLinks.some((pl: any) =>
+      pl.parentProfile?.studentLinks?.some((sl: any) => sl.studentProfile?.hostelAllocations?.length > 0),
     );
     if (hasActiveSibling) score += 30;
   } catch (err) {
@@ -322,14 +322,20 @@ export async function calculateApplicationPriorityScore(
 
   // 5. Disciplinary penalty check (-100 for high/critical records)
   try {
-    const disciplinaryCount = await db.behaviourRecord.count({
-      where: {
-        studentProfileId,
-        type: { in: ["SUSPENSION", "WARNING", "INCIDENT"] },
-        severity: { in: ["HIGH", "CRITICAL"] },
-      },
+    const studentProf = await db.studentProfile.findUnique({
+      where: { id: studentProfileId },
+      select: { userId: true },
     });
-    if (disciplinaryCount > 0) score -= 100;
+    if (studentProf?.userId) {
+      const disciplinaryCount = await db.behaviourRecord.count({
+        where: {
+          studentId: studentProf.userId,
+          type: { in: ["SUSPENSION", "WARNING", "INCIDENT"] },
+          severity: { in: ["HIGH", "CRITICAL"] },
+        },
+      });
+      if (disciplinaryCount > 0) score -= 100;
+    }
   } catch (err) {
     logger.warn("Failed to check student behaviour records:", err);
   }
@@ -1023,7 +1029,7 @@ export async function updateRoom(
       ...(input.roomType !== undefined && { roomType: input.roomType }),
       ...(input.capacity !== undefined && { capacity: input.capacity }),
       ...(input.status !== undefined && { status: input.status }),
-      ...(input.amenities !== undefined && { amenities: input.amenities }),
+      ...(input.amenities !== undefined && { amenities: input.amenities ?? [] }),
       ...(input.isAccessible !== undefined && { isAccessible: input.isAccessible }),
     },
     include: { beds: true },
@@ -2609,7 +2615,7 @@ export async function getOutpasses(
 export async function decideOutpass(
   schoolId: string,
   outpassId: string,
-  status: OutpassStatus.APPROVED | OutpassStatus.REJECTED,
+  status: "APPROVED" | "REJECTED",
   actor: { id: string; email: string; role: string },
 ) {
   const outpass = await db.hostelOutpass.findFirst({
@@ -3199,7 +3205,7 @@ export async function decideTransferRequest(
   schoolId: string,
   requestId: string,
   input: {
-    status: TransferRequestStatus.APPROVED | TransferRequestStatus.REJECTED;
+    status: "APPROVED" | "REJECTED";
     toBedId?: string | null;
     decisionNotes?: string | null;
   },

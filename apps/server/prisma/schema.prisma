@@ -507,6 +507,20 @@ model School {
   hostels               Hostel[]
   hostelApplications    HostelApplication[]
 
+  // Inventory & Asset Management
+  inventoryLocations   InventoryLocation[]
+  inventoryCategories  InventoryCategory[]
+  inventorySuppliers   Supplier[]
+  inventoryItems       InventoryItem[]
+  inventoryRequests    InventoryRequest[]
+  purchaseOrders       PurchaseOrder[]
+  goodsReceipts        GoodsReceipt[]
+  inventoryAllocations InventoryAllocation[]
+  inventoryMovements   InventoryMovement[]
+  maintenanceRecords   MaintenanceRecord[]
+  disposalRecords      DisposalRecord[]
+  stockCounts          StockCount[]
+
   @@map("schools")
 }
 
@@ -676,6 +690,20 @@ model User {
   loggedHostelVisitors          HostelVisitorLog[]        @relation("VisitorLogger")
   reportedHostelTickets         HostelMaintenanceTicket[] @relation("TicketReporter")
   reportedHostelIncidents       HostelIncidentReport[]    @relation("IncidentReporter")
+
+  // Inventory & Asset Management
+  inventoryRequestsMade       InventoryRequest[]      @relation("RequestedBy")
+  inventoryRequestsApproved   InventoryRequest[]      @relation("ApprovedRequests")
+  custodianAllocations        InventoryAllocation[]   @relation("CustodianOf")
+  allocationsIssued           InventoryAllocation[]   @relation("IssuedAllocations")
+  purchaseOrdersMade          PurchaseOrder[]         @relation("OrderedPOs")
+  purchaseOrdersApproved      PurchaseOrder[]         @relation("ApprovedPOs")
+  goodsReceiptsRecorded       GoodsReceipt[]
+  inventoryMovementsPerformed InventoryMovement[]
+  maintenanceReported         MaintenanceRecord[]     @relation("ReportedMaintenance")
+  maintenanceAssigned         MaintenanceRecord[]     @relation("AssignedMaintenance")
+  disposalsApproved           DisposalRecord[]
+  stockCountsStarted          StockCount[]
 
   school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
 
@@ -2724,6 +2752,10 @@ enum AllocationStatus {
   TRANSFERRED
   TERMINATED    // disciplinary / non-payment
   EXPIRED       // term/year ended, not renewed
+  RETURNED
+  OVERDUE
+  LOST
+  DAMAGED
 }
 
 enum TransferRequestStatus {
@@ -2780,9 +2812,12 @@ enum MaintenancePriority {
 
 enum MaintenanceStatus {
   OPEN
+  REPORTED
   ASSIGNED
   IN_PROGRESS
+  AWAITING_PARTS
   RESOLVED
+  UNRESOLVABLE
   CLOSED
   CANCELLED
 }
@@ -3082,6 +3117,470 @@ model HostelIncidentReport {
 
   @@index([allocationId])
   @@map("hostel_incident_reports")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FEATURE 8: INVENTORY & ASSET MANAGEMENT
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum InventoryLocationType {
+  CAMPUS
+  BLOCK
+  FLOOR
+  ROOM
+  STORE_BIN
+}
+
+enum ItemType {
+  FIXED_ASSET
+  CONSUMABLE
+}
+
+enum ItemCondition {
+  NEW
+  GOOD
+  FAIR
+  DAMAGED
+  UNDER_REPAIR
+  CONDEMNED
+}
+
+enum ItemLifecycleStatus {
+  IN_STOCK
+  ALLOCATED
+  UNDER_MAINTENANCE
+  RESERVED
+  DISPOSED
+  LOST
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  PARTIALLY_FULFILLED
+  FULFILLED
+  CANCELLED
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  ORDERED
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CANCELLED
+}
+
+enum CustodianType {
+  STAFF
+  STUDENT
+  ROOM
+  DEPARTMENT
+  CLASS
+}
+
+enum MovementType {
+  RECEIVED
+  ALLOCATED
+  TRANSFERRED
+  RETURNED
+  ADJUSTED
+  DAMAGED
+  LOST
+  SENT_FOR_MAINTENANCE
+  RETURNED_FROM_MAINTENANCE
+  DISPOSED
+  WRITTEN_OFF
+}
+
+enum DisposalReason {
+  OBSOLETE
+  DAMAGED_BEYOND_REPAIR
+  LOST
+  STOLEN
+  DONATED
+  SOLD
+  EXPIRED
+}
+
+enum DepreciationMethod {
+  STRAIGHT_LINE
+  REDUCING_BALANCE
+  NONE
+}
+
+model InventoryLocation {
+  id             String                 @id @default(uuid())
+  schoolId       String
+  school         School                 @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  name           String
+  type           InventoryLocationType
+  parentId       String?
+  parent         InventoryLocation?     @relation("LocationTree", fields: [parentId], references: [id])
+  children       InventoryLocation[]    @relation("LocationTree")
+  isStoreRoom    Boolean                @default(false)
+  isDisposalHold Boolean                @default(false)
+  isActive       Boolean                @default(true)
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  items          InventoryItem[]        @relation("CurrentLocation")
+  movementsFrom  InventoryMovement[]    @relation("MovementFrom")
+  movementsTo    InventoryMovement[]    @relation("MovementTo")
+  stockCounts    StockCount[]
+  allocations    InventoryAllocation[]
+  goodsReceipts  GoodsReceipt[]
+
+  @@index([schoolId, parentId])
+  @@map("inventory_locations")
+}
+
+model InventoryCategory {
+  id                  String              @id @default(uuid())
+  schoolId            String
+  school              School              @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  name                String
+  parentId            String?
+  parent              InventoryCategory?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children            InventoryCategory[] @relation("CategoryTree")
+  defaultItemType     ItemType            @default(CONSUMABLE)
+  defaultUnit         String              @default("piece")
+  defaultReorderPoint Int?
+  defaultReorderQty   Int?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  items               InventoryItem[]
+
+  @@index([schoolId, parentId])
+  @@map("inventory_categories")
+}
+
+model Supplier {
+  id           String            @id @default(uuid())
+  schoolId     String
+  school       School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  name         String
+  contactName  String?
+  phone        String?
+  email        String?
+  address      String?
+  taxId        String?
+  paymentTerms String?
+  rating       Int?              // 1-5, updated from delivery/quality history
+  isActive     Boolean           @default(true)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  items            InventoryItem[]
+  purchaseOrders   PurchaseOrder[]
+
+  @@index([schoolId])
+  @@map("inventory_suppliers")
+}
+
+model InventoryItem {
+  id                String               @id @default(uuid())
+  schoolId          String
+  school            School               @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  categoryId        String
+  category          InventoryCategory    @relation(fields: [categoryId], references: [id])
+  name              String
+  sku               String?              // internal stock keeping unit
+  barcodeNumber     String?              @unique
+  qrCodeUrl         String?
+  itemType          ItemType
+  description       String?
+  unit              String               @default("piece")
+  imageUrl          String?
+
+  // Fixed-asset-only fields (null for CONSUMABLE)
+  serialNumber      String?              @unique
+  assetTagNumber    String?              @unique
+  purchaseDate      DateTime?
+  purchaseCost      Float?
+  warrantyExpiresAt DateTime?
+  depreciationMethod DepreciationMethod  @default(NONE)
+  usefulLifeMonths  Int?
+  salvageValue      Float?               @default(0)
+  currentBookValue  Float?
+
+  // Consumable-only fields
+  quantityOnHand    Int?                 @default(0)
+  reorderPoint      Int?
+  reorderQty        Int?
+  unitCost          Float?
+
+  condition         ItemCondition        @default(NEW)
+  status            ItemLifecycleStatus  @default(IN_STOCK)
+  currentLocationId String?
+  currentLocation   InventoryLocation?   @relation("CurrentLocation", fields: [currentLocationId], references: [id])
+  preferredSupplierId String?
+  preferredSupplier  Supplier?           @relation(fields: [preferredSupplierId], references: [id])
+
+  notes             String?
+  isActive          Boolean              @default(true)
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  allocations       InventoryAllocation[]
+  movements         InventoryMovement[]
+  maintenanceRecords MaintenanceRecord[]
+  poLines           PurchaseOrderLine[]
+  requestLines      InventoryRequestLine[]
+  disposalRecords   DisposalRecord[]
+  stockCountLines   StockCountLine[]
+
+  @@index([schoolId, categoryId])
+  @@index([schoolId, status])
+  @@map("inventory_items")
+}
+
+model InventoryRequest {
+  id               String                 @id @default(uuid())
+  schoolId         String
+  school           School                 @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  requestedById    String
+  requestedBy      User                   @relation("RequestedBy", fields: [requestedById], references: [id])
+  departmentOrRoom String?                // free-text or link to a Class/GradeLevel
+  reason           String
+  neededBy         DateTime?
+  status           RequestStatus          @default(PENDING)
+  approvedById     String?
+  approvedBy       User?                  @relation("ApprovedRequests", fields: [approvedById], references: [id])
+  approvedAt       DateTime?
+  rejectionReason  String?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  lines            InventoryRequestLine[]
+  purchaseOrders   PurchaseOrder[]
+  allocations      InventoryAllocation[]
+
+  @@index([schoolId, status])
+  @@map("inventory_requests")
+}
+
+model InventoryRequestLine {
+  id                String            @id @default(uuid())
+  requestId         String
+  request           InventoryRequest  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  itemId            String?           // null if requesting something not yet in the catalog
+  item              InventoryItem?    @relation(fields: [itemId], references: [id])
+  freeTextName      String?           // used when itemId is null
+  quantityRequested Int
+  quantityFulfilled Int               @default(0)
+
+  @@map("inventory_request_lines")
+}
+
+model PurchaseOrder {
+  id                   String               @id @default(uuid())
+  schoolId             String
+  school               School               @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  poNumber             String               @unique
+  supplierId           String
+  supplier             Supplier             @relation(fields: [supplierId], references: [id])
+  requestId            String?
+  request              InventoryRequest?    @relation(fields: [requestId], references: [id])
+  status               PurchaseOrderStatus  @default(DRAFT)
+  orderedById          String
+  orderedBy            User                 @relation("OrderedPOs", fields: [orderedById], references: [id])
+  approvedById         String?
+  approvedBy           User?                @relation("ApprovedPOs", fields: [approvedById], references: [id])
+  expectedDeliveryDate DateTime?
+  totalAmount          Float                @default(0)
+  currency             String               @default("ETB")
+  notes                String?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+
+  lines                PurchaseOrderLine[]
+  receipts             GoodsReceipt[]
+
+  @@index([schoolId, status])
+  @@map("inventory_purchase_orders")
+}
+
+model PurchaseOrderLine {
+  id               String         @id @default(uuid())
+  poId             String
+  po               PurchaseOrder  @relation(fields: [poId], references: [id], onDelete: Cascade)
+  itemId           String?
+  item             InventoryItem? @relation(fields: [itemId], references: [id])
+  description      String         // needed when ordering something new to the catalog
+  quantityOrdered  Int
+  quantityReceived Int            @default(0)
+  unitCost         Float
+
+  goodsReceiptLines GoodsReceiptLine[]
+
+  @@map("inventory_po_lines")
+}
+
+model GoodsReceipt {
+  id               String            @id @default(uuid())
+  schoolId         String
+  school           School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  poId             String
+  po               PurchaseOrder     @relation(fields: [poId], references: [id])
+  receivedById     String
+  receivedBy       User              @relation(fields: [receivedById], references: [id])
+  receivedAt       DateTime          @default(now())
+  locationId       String            // store room the goods land in
+  location         InventoryLocation @relation(fields: [locationId], references: [id])
+  notes            String?
+  discrepancyNotes String?
+
+  lines            GoodsReceiptLine[]
+
+  @@index([schoolId])
+  @@map("inventory_goods_receipts")
+}
+
+model GoodsReceiptLine {
+  id                 String            @id @default(uuid())
+  receiptId          String
+  receipt            GoodsReceipt      @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  poLineId           String
+  poLine             PurchaseOrderLine @relation(fields: [poLineId], references: [id])
+  quantityReceived   Int
+  conditionOnArrival ItemCondition     @default(NEW)
+  serialNumbers      String[]          // for fixed assets, one entry per unit received
+
+  @@map("inventory_goods_receipt_lines")
+}
+
+model InventoryAllocation {
+  id                String             @id @default(uuid())
+  schoolId          String
+  school            School             @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  itemId            String
+  item              InventoryItem      @relation(fields: [itemId], references: [id])
+  quantity          Int                @default(1)   // >1 only for consumables issued in bulk
+  requestId         String?
+  request           InventoryRequest?  @relation(fields: [requestId], references: [id])
+
+  custodianType     CustodianType
+  custodianUserId   String?            // STAFF or STUDENT
+  custodianUser     User?              @relation("CustodianOf", fields: [custodianUserId], references: [id])
+  custodianRoomId   String?            // ROOM
+  custodianRoom     InventoryLocation? @relation(fields: [custodianRoomId], references: [id])
+  custodianLabel    String?            // DEPARTMENT / CLASS free text
+
+  issuedById        String
+  issuedBy          User               @relation("IssuedAllocations", fields: [issuedById], references: [id])
+  issuedAt          DateTime           @default(now())
+  dueBackAt         DateTime?
+  returnedAt        DateTime?
+  conditionAtIssue  ItemCondition
+  conditionAtReturn ItemCondition?
+  status            AllocationStatus   @default(ACTIVE)
+  notes             String?
+
+  @@index([schoolId, status])
+  @@index([itemId])
+  @@map("inventory_allocations")
+}
+
+model InventoryMovement {
+  id                   String             @id @default(uuid())
+  schoolId             String
+  school               School             @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  itemId               String
+  item                 InventoryItem      @relation(fields: [itemId], references: [id])
+  type                 MovementType
+  quantity             Int                @default(1)
+  fromLocationId       String?
+  fromLocation         InventoryLocation? @relation("MovementFrom", fields: [fromLocationId], references: [id])
+  toLocationId         String?
+  toLocation           InventoryLocation? @relation("MovementTo", fields: [toLocationId], references: [id])
+  performedById        String
+  performedBy          User               @relation(fields: [performedById], references: [id])
+  relatedAllocationId  String?
+  relatedMaintenanceId String?
+  note                 String?
+  createdAt            DateTime           @default(now())
+
+  @@index([schoolId, itemId])
+  @@index([schoolId, type])
+  @@map("inventory_movements")
+}
+
+model MaintenanceRecord {
+  id                String            @id @default(uuid())
+  schoolId          String
+  school            School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  itemId            String
+  item              InventoryItem     @relation(fields: [itemId], references: [id])
+  reportedById      String
+  reportedBy        User              @relation("ReportedMaintenance", fields: [reportedById], references: [id])
+  faultDescription  String
+  status            MaintenanceStatus @default(REPORTED)
+  assignedToStaffId String?
+  assignedToStaff   User?             @relation("AssignedMaintenance", fields: [assignedToStaffId], references: [id])
+  externalVendor    String?
+  cost              Float?
+  reportedAt        DateTime          @default(now())
+  resolvedAt        DateTime?
+  resolutionNotes   String?
+
+  @@index([schoolId, status])
+  @@map("inventory_maintenance_records")
+}
+
+model DisposalRecord {
+  id                  String          @id @default(uuid())
+  schoolId            String
+  school              School          @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  itemId              String
+  item                InventoryItem   @relation(fields: [itemId], references: [id])
+  reason              DisposalReason
+  method              String?         // "auction", "e-waste recycler", "donated to X", etc.
+  approvedById        String
+  approvedBy          User            @relation(fields: [approvedById], references: [id])
+  bookValueAtDisposal Float?
+  saleValue           Float?
+  disposedAt          DateTime        @default(now())
+  notes               String?
+
+  @@index([schoolId])
+  @@map("inventory_disposal_records")
+}
+
+model StockCount {
+  id          String             @id @default(uuid())
+  schoolId    String
+  school      School             @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  title       String             // "Q3 2026 Full Stock Take", "Chemistry Lab Cycle Count"
+  locationId  String?            // null = whole-school count
+  location    InventoryLocation? @relation(fields: [locationId], references: [id])
+  startedById String
+  startedBy   User               @relation(fields: [startedById], references: [id])
+  status      String             @default("IN_PROGRESS") // IN_PROGRESS | COMPLETED | CANCELLED
+  startedAt   DateTime           @default(now())
+  completedAt DateTime?
+
+  lines       StockCountLine[]
+
+  @@index([schoolId])
+  @@map("inventory_stock_counts")
+}
+
+model StockCountLine {
+  id           String        @id @default(uuid())
+  stockCountId String
+  stockCount   StockCount    @relation(fields: [stockCountId], references: [id], onDelete: Cascade)
+  itemId       String
+  item         InventoryItem @relation(fields: [itemId], references: [id])
+  expectedQty  Int
+  countedQty   Int?
+  variance     Int?
+  notes        String?
+
+  @@map("inventory_stock_count_lines")
 }
 
 

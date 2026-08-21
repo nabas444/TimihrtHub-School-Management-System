@@ -489,7 +489,7 @@ router.post(
         targetId: req.params.invoiceId,
         metadata: {
           paymentRecorded: true,
-          paymentId: payment.id,
+          paymentId: (payment as any).payment?.id || (payment as any).id,
           amount: data.amount,
           method: data.method,
         },

@@ -53,6 +53,7 @@ import policyRoutes, { publicPoliciesRouter } from "./modules/policies/policies.
 import { protectedAdmissionsRouter as admissionsRoutes, publicAdmissionsRouter } from "./modules/admissions/admissions.routes";
 import auditLogRoutes from "./modules/audit-logs/audit-logs.routes";
 import hostelRoutes from "./modules/hostel/hostel.routes";
+import inventoryRoutes from "./modules/inventory/inventory.routes";
 
 // ── Background job workers ───────────────────────────────────────────────────
 // Importing these starts their BullMQ Worker instances (side effect on import).
@@ -189,6 +190,7 @@ app.use("/api/v1/curriculum-units", curriculumRoutes);
 app.use("/api/v1/policies", policyRoutes);
 app.use("/api/v1/policy-versions", policyRoutes);
 app.use("/api/v1/hostels", hostelRoutes);
+app.use("/api/v1/inventory", inventoryRoutes);
 
 // ── 404 + Error handlers ─────────────────────────────────────────────────────
 app.use(notFoundHandler);

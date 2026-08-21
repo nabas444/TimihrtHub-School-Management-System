@@ -509,7 +509,7 @@ export async function runDeadlineEngineCycle() {
               stage: "POLICY_REVIEW_OVERDUE",
               link: `/policies/${policy.id}`,
             });
-          } else if (evalPolicy.daysRemaining <= 30) {
+          } else if (evalPolicy.hoursRemaining <= 30 * 24) {
             await dispatchDeadlineNotification({
               schoolId: school.id,
               userId: policy.ownerId,

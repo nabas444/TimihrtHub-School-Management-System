@@ -28,6 +28,7 @@ export async function runHostelTermRollover(params: {
           id: true,
           status: true,
           userId: true,
+          graduatedAt: true,
         },
       },
       bed: {
@@ -44,10 +45,9 @@ export async function runHostelTermRollover(params: {
 
   for (const alloc of activeAllocations) {
     const isDeparting =
-      alloc.studentProfile.status === StudentStatus.GRADUATED ||
-      alloc.studentProfile.status === StudentStatus.WITHDRAWN ||
-      alloc.studentProfile.status === StudentStatus.TRANSFERRED ||
-      alloc.studentProfile.status === StudentStatus.EXPELLED;
+      alloc.studentProfile.status === StudentStatus.INACTIVE ||
+      alloc.studentProfile.status === StudentStatus.ARCHIVE ||
+      Boolean(alloc.studentProfile.graduatedAt);
 
     if (isDeparting) {
       // Free bed and expire allocation

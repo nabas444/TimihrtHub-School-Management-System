@@ -28,7 +28,7 @@ import { runHostelOutpassOverdueJob } from "../../../jobs/hostelOutpassOverdueJo
 
 // Mock dependencies
 vi.mock("../../../config/database", () => {
-  const mDb = {
+  const mDb: any = {
     hostel: {
       create: vi.fn(),
       findMany: vi.fn(),
@@ -292,7 +292,7 @@ describe("Hostel Module — Full Phases 1-4 Test Suite", () => {
           outpasses: [
             {
               id: "out-1",
-              type: OutpassType.WEEKEND,
+              type: OutpassType.HOME_VISIT,
               destination: "Home",
               expectedReturnAt: new Date("2026-08-22T18:00:00Z"),
             },
@@ -332,7 +332,7 @@ describe("Hostel Module — Full Phases 1-4 Test Suite", () => {
         schoolId,
         {
           allocationId: "alloc-1",
-          type: OutpassType.DAY,
+          type: OutpassType.DAY_OUT,
           fromDateTime: "2026-08-21T08:00:00.000Z",
           expectedReturnAt: "2026-08-21T17:00:00.000Z",
           destination: "Family Visit",
@@ -607,10 +607,10 @@ describe("Hostel Module — Full Phases 1-4 Test Suite", () => {
         .mockResolvedValueOnce({ id: "room-old", status: RoomStatus.FULL, beds: [{ status: BedStatus.VACANT }] })
         .mockResolvedValueOnce({ id: "room-target", status: RoomStatus.AVAILABLE, beds: [{ status: BedStatus.OCCUPIED }] });
 
-      const transferResult = await HostelService.decideTransferRequest(
+      const transferResult: any = await HostelService.decideTransferRequest(
         schoolId,
         "tr-1",
-        { status: TransferRequestStatus.APPROVED },
+        { status: "APPROVED" },
         actor,
       );
 
