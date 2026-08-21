@@ -2667,4 +2667,696 @@ export async function generateAnnualPlanPdf(
   return Buffer.from(await doc.save());
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// CEREMONY & GRADUATION PROGRAM PDF GENERATION
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface CeremonyProgramPdfData {
+  school: SchoolHeader;
+  ceremony: {
+    title: string;
+    type: string;
+    academicYear: string;
+    ceremonyDate?: Date | string | null;
+    venue?: string | null;
+    attireNote?: string | null;
+    program?: string | null;
+    gradeLevelName?: string | null;
+  };
+  participants: Array<{
+    name: string;
+    admissionNumber?: string | null;
+    className?: string | null;
+    attendanceConfirmed?: boolean;
+    certificateIssued?: boolean;
+  }>;
+}
+
+export async function generateCeremonyProgramPdf(
+  data: CeremonyProgramPdfData,
+): Promise<Buffer> {
+  await loadPdfLib();
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+  const oblique = await doc.embedFont(StandardFonts.HelveticaOblique);
+
+  // A4 Portrait
+  const width = PAGE.width;
+  const height = PAGE.height;
+  const margin = 40;
+  const contentWidth = width - margin * 2;
+
+  const participants = data.participants || [];
+  const participantsPerPage = 22;
+  const totalPages = Math.max(1, Math.ceil(participants.length / participantsPerPage));
+
+  const formatCeremonyDate = (d: Date | string | null | undefined) => {
+    if (!d) return "Date to be announced";
+    const dateObj = typeof d === "string" ? new Date(d) : d;
+    return dateObj.toLocaleDateString("en-US", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+  };
+
+  for (let pageIdx = 0; pageIdx < totalPages; pageIdx++) {
+    const page = doc.addPage([width, height]);
+    let y = height - margin;
+
+    // ── Page Border & Decorative Accents ──
+    page.drawRectangle({
+      x: margin - 15,
+      y: margin - 15,
+      width: contentWidth + 30,
+      height: height - (margin - 15) * 2,
+      borderColor: COLOR.navy,
+      borderWidth: 1.5,
+    });
+    page.drawRectangle({
+      x: margin - 11,
+      y: margin - 11,
+      width: contentWidth + 22,
+      height: height - (margin - 11) * 2,
+      borderColor: rgb(0.85, 0.75, 0.5), // Gold-tinted inner frame
+      borderWidth: 0.75,
+    });
+
+    // ── Header (Every Page) ──
+    page.drawText(data.school.name.toUpperCase(), {
+      x: width / 2 - bold.widthOfTextAtSize(data.school.name.toUpperCase(), 15) / 2,
+      y,
+      size: 15,
+      font: bold,
+      color: COLOR.navy,
+    });
+    y -= 14;
+
+    const subHeader = [data.school.address, data.school.phone, data.school.email]
+      .filter(Boolean)
+      .join("  •  ");
+    if (subHeader) {
+      page.drawText(subHeader, {
+        x: width / 2 - font.widthOfTextAtSize(subHeader, 7.5) / 2,
+        y,
+        size: 7.5,
+        font,
+        color: COLOR.gray,
+      });
+      y -= 14;
+    }
+
+    // Page Number
+    const pageStr = `Page ${pageIdx + 1} of ${totalPages}`;
+    page.drawText(pageStr, {
+      x: width - margin - font.widthOfTextAtSize(pageStr, 7.5),
+      y: height - margin + 2,
+      size: 7.5,
+      font,
+      color: COLOR.gray,
+    });
+
+    // ── Title Banner (Page 1 Only) ──
+    if (pageIdx === 0) {
+      y -= 6;
+      page.drawRectangle({
+        x: margin,
+        y: y - 56,
+        width: contentWidth,
+        height: 56,
+        color: rgb(0.95, 0.96, 0.98),
+        borderColor: COLOR.navy,
+        borderWidth: 1,
+      });
+
+      const titleText = data.ceremony.title.toUpperCase();
+      page.drawText(titleText, {
+        x: width / 2 - bold.widthOfTextAtSize(titleText, 13) / 2,
+        y: y - 18,
+        size: 13,
+        font: bold,
+        color: COLOR.navy,
+      });
+
+      const metaText = `OFFICIAL CEREMONY PROGRAM  |  ACADEMIC YEAR: ${data.ceremony.academicYear}${
+        data.ceremony.gradeLevelName ? `  |  ${data.ceremony.gradeLevelName.toUpperCase()}` : ""
+      }`;
+      page.drawText(metaText, {
+        x: width / 2 - bold.widthOfTextAtSize(metaText, 8.5) / 2,
+        y: y - 34,
+        size: 8.5,
+        font: bold,
+        color: rgb(0.3, 0.35, 0.45),
+      });
+
+      const eventDetails = `Date: ${formatCeremonyDate(data.ceremony.ceremonyDate)}   •   Venue: ${data.ceremony.venue || "School Main Auditorium"}`;
+      page.drawText(eventDetails, {
+        x: width / 2 - font.widthOfTextAtSize(eventDetails, 8) / 2,
+        y: y - 48,
+        size: 8,
+        font,
+        color: COLOR.gray,
+      });
+
+      y -= 70;
+
+      // Attire Note if provided
+      if (data.ceremony.attireNote) {
+        const attireText = `Attire Note: ${data.ceremony.attireNote}`;
+        page.drawText(attireText, {
+          x: margin + 4,
+          y,
+          size: 8,
+          font: oblique,
+          color: rgb(0.2, 0.4, 0.3),
+        });
+        y -= 14;
+      }
+
+      // Order of Program / Agenda
+      if (data.ceremony.program) {
+        page.drawText("ORDER OF PROGRAM & AGENDA", {
+          x: margin,
+          y,
+          size: 8.5,
+          font: bold,
+          color: COLOR.navy,
+        });
+        y -= 12;
+
+        const programLines = data.ceremony.program.split("\n").filter((l) => l.trim().length > 0);
+        for (const line of programLines.slice(0, 4)) {
+          page.drawText(`• ${line.trim()}`, {
+            x: margin + 8,
+            y,
+            size: 7.5,
+            font,
+            color: COLOR.black,
+            maxWidth: contentWidth - 16,
+          });
+          y -= 11;
+        }
+        y -= 6;
+      }
+    } else {
+      y -= 10;
+    }
+
+    // ── Participants Roster Section ──
+    page.drawText(
+      `HONORED CANDIDATES & PARTICIPANTS (${participants.length} Total)`,
+      {
+        x: margin,
+        y,
+        size: 9,
+        font: bold,
+        color: COLOR.navy,
+      },
+    );
+    y -= 14;
+
+    // Table Header
+    const colX = {
+      no: margin + 6,
+      name: margin + 35,
+      admNo: margin + 240,
+      className: margin + 335,
+      status: margin + 430,
+    };
+
+    page.drawRectangle({
+      x: margin,
+      y: y - 16,
+      width: contentWidth,
+      height: 16,
+      color: COLOR.navy,
+    });
+
+    page.drawText("#", { x: colX.no, y: y - 12, size: 7.5, font: bold, color: COLOR.white });
+    page.drawText("STUDENT FULL NAME", { x: colX.name, y: y - 12, size: 7.5, font: bold, color: COLOR.white });
+    page.drawText("ADMISSION NO.", { x: colX.admNo, y: y - 12, size: 7.5, font: bold, color: COLOR.white });
+    page.drawText("CLASS / SECTION", { x: colX.className, y: y - 12, size: 7.5, font: bold, color: COLOR.white });
+    page.drawText("STATUS", { x: colX.status, y: y - 12, size: 7.5, font: bold, color: COLOR.white });
+
+    y -= 20;
+
+    const pageStart = pageIdx * participantsPerPage;
+    const pageParticipants = participants.slice(pageStart, pageStart + participantsPerPage);
+
+    pageParticipants.forEach((p, idx) => {
+      const globalIndex = pageStart + idx + 1;
+      const isEven = idx % 2 === 0;
+
+      if (isEven) {
+        page.drawRectangle({
+          x: margin,
+          y: y - 13,
+          width: contentWidth,
+          height: 15,
+          color: rgb(0.97, 0.98, 0.99),
+        });
+      }
+
+      page.drawText(`${globalIndex}`, {
+        x: colX.no,
+        y: y - 9,
+        size: 7.5,
+        font,
+        color: COLOR.gray,
+      });
+
+      page.drawText(p.name, {
+        x: colX.name,
+        y: y - 9,
+        size: 8,
+        font: bold,
+        color: COLOR.black,
+        maxWidth: 200,
+      });
+
+      page.drawText(p.admissionNumber || "—", {
+        x: colX.admNo,
+        y: y - 9,
+        size: 7.5,
+        font,
+        color: COLOR.gray,
+      });
+
+      page.drawText(p.className || "—", {
+        x: colX.className,
+        y: y - 9,
+        size: 7.5,
+        font,
+        color: COLOR.black,
+      });
+
+      const statusText = p.certificateIssued
+        ? "CERTIFICATE ISSUED"
+        : p.attendanceConfirmed
+        ? "CONFIRMED"
+        : "ENROLLED";
+
+      page.drawText(statusText, {
+        x: colX.status,
+        y: y - 9,
+        size: 7,
+        font: bold,
+        color: p.certificateIssued ? COLOR.green : COLOR.navy,
+      });
+
+      y -= 16;
+    });
+
+    // ── Signatures & Seal on Final Page ──
+    if (pageIdx === totalPages - 1) {
+      const sigY = margin + 35;
+
+      page.drawLine({
+        start: { x: margin + 20, y: sigY },
+        end: { x: margin + 200, y: sigY },
+        thickness: 0.8,
+        color: COLOR.gray,
+      });
+      page.drawText("Head of Academic Committee", {
+        x: margin + 20,
+        y: sigY - 12,
+        size: 7.5,
+        font: bold,
+        color: COLOR.navy,
+      });
+      page.drawText("Signature & Date", {
+        x: margin + 20,
+        y: sigY - 22,
+        size: 6.5,
+        font,
+        color: COLOR.gray,
+      });
+
+      page.drawLine({
+        start: { x: width - margin - 200, y: sigY },
+        end: { x: width - margin - 20, y: sigY },
+        thickness: 0.8,
+        color: COLOR.gray,
+      });
+      page.drawText("School Director / Principal", {
+        x: width - margin - 200,
+        y: sigY - 12,
+        size: 7.5,
+        font: bold,
+        color: COLOR.navy,
+      });
+      page.drawText("Official School Seal & Signature", {
+        x: width - margin - 200,
+        y: sigY - 22,
+        size: 6.5,
+        font,
+        color: COLOR.gray,
+      });
+    }
+  }
+
+  return Buffer.from(await doc.save());
+}
+
+export interface JobOfferPdfData {
+  offerNumber: string;
+  candidateName: string;
+  candidateEmail?: string | null;
+  candidatePhone?: string | null;
+  positionTitle: string;
+  departmentName?: string | null;
+  employmentType: string;
+  offeredSalary: number;
+  salaryPeriod?: string;
+  startDate: Date | string;
+  probationMonths?: number;
+  benefits?: string | null;
+  conditions?: string | null;
+  expiresAt?: Date | string | null;
+}
+
+export async function generateJobOfferLetterPdf(
+  school: SchoolHeader,
+  offer: JobOfferPdfData,
+): Promise<Buffer> {
+  const { doc, font, bold } = await newDoc();
+  const page = doc.addPage([PAGE.width, PAGE.height]);
+  const { width, height } = page.getSize();
+  const margin = 45;
+
+  // Header banner
+  page.drawRectangle({
+    x: 0,
+    y: height - 100,
+    width,
+    height: 100,
+    color: COLOR.navy,
+  });
+
+  page.drawText(school.name, {
+    x: margin,
+    y: height - 42,
+    size: 20,
+    font: bold,
+    color: COLOR.white,
+  });
+
+  const contactLine = [school.address, school.phone, school.email]
+    .filter(Boolean)
+    .join("  ·  ");
+  if (contactLine) {
+    page.drawText(contactLine, {
+      x: margin,
+      y: height - 60,
+      size: 9,
+      font,
+      color: rgb(0.85, 0.88, 0.93),
+    });
+  }
+
+  page.drawText("OFFICIAL APPOINTMENT & JOB OFFER LETTER", {
+    x: margin,
+    y: height - 85,
+    size: 11,
+    font: bold,
+    color: rgb(0.95, 0.77, 0.06), // Gold accent
+  });
+
+  let y = height - 130;
+
+  // Ref & Date row
+  const formattedDate = new Date().toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+  page.drawText(`Ref: ${offer.offerNumber}`, {
+    x: margin,
+    y,
+    size: 9.5,
+    font: bold,
+    color: COLOR.navy,
+  });
+  page.drawText(`Date: ${formattedDate}`, {
+    x: width - margin - 130,
+    y,
+    size: 9.5,
+    font,
+    color: COLOR.gray,
+  });
+
+  y -= 30;
+
+  // Recipient info
+  page.drawText("To Candidate:", {
+    x: margin,
+    y,
+    size: 9.5,
+    font: bold,
+    color: COLOR.navy,
+  });
+  y -= 14;
+  page.drawText(offer.candidateName, {
+    x: margin,
+    y,
+    size: 13,
+    font: bold,
+    color: COLOR.black,
+  });
+  y -= 14;
+  if (offer.candidateEmail || offer.candidatePhone) {
+    const candContact = [offer.candidateEmail, offer.candidatePhone]
+      .filter(Boolean)
+      .join("  |  ");
+    page.drawText(candContact, {
+      x: margin,
+      y,
+      size: 9,
+      font,
+      color: COLOR.gray,
+    });
+    y -= 14;
+  }
+
+  y -= 10;
+
+  // Greeting & Opening
+  page.drawText(`Dear ${offer.candidateName},`, {
+    x: margin,
+    y,
+    size: 10.5,
+    font: bold,
+    color: COLOR.black,
+  });
+  y -= 18;
+
+  const introText =
+    `We are delighted to extend to you this formal offer of employment with ${school.name}. ` +
+    `Following your application and successful interview evaluations, our leadership and academic board ` +
+    `were thoroughly impressed by your credentials, character, and dedication to excellence in education.`;
+
+  // Draw wrapped paragraph
+  const words = introText.split(" ");
+  let currentLine = "";
+  for (const word of words) {
+    const testLine = currentLine ? `${currentLine} ${word}` : word;
+    const lineWidth = font.widthOfTextAtSize(testLine, 9.5);
+    if (lineWidth > width - margin * 2) {
+      page.drawText(currentLine, { x: margin, y, size: 9.5, font, color: COLOR.black });
+      y -= 14;
+      currentLine = word;
+    } else {
+      currentLine = testLine;
+    }
+  }
+  if (currentLine) {
+    page.drawText(currentLine, { x: margin, y, size: 9.5, font, color: COLOR.black });
+    y -= 20;
+  }
+
+  // Key Terms Card Box
+  const cardHeight = 150;
+  page.drawRectangle({
+    x: margin,
+    y: y - cardHeight,
+    width: width - margin * 2,
+    height: cardHeight,
+    color: rgb(0.97, 0.98, 1.0),
+    borderColor: rgb(0.8, 0.85, 0.95),
+    borderWidth: 1,
+  });
+
+  let cardY = y - 22;
+  page.drawText("Summary of Employment Terms", {
+    x: margin + 15,
+    y: cardY,
+    size: 11,
+    font: bold,
+    color: COLOR.navy,
+  });
+  cardY -= 22;
+
+  const startFormatted = new Date(offer.startDate).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+
+  const terms = [
+    { label: "Position / Job Title:", val: offer.positionTitle },
+    { label: "Department / Section:", val: offer.departmentName || "General School Operations" },
+    { label: "Employment Basis:", val: offer.employmentType.replace(/_/g, " ") },
+    {
+      label: "Compensation / Remuneration:",
+      val: `ETB ${offer.offeredSalary.toLocaleString()} / ${(offer.salaryPeriod || "MONTHLY").toLowerCase()}`,
+    },
+    { label: "Official Start Date:", val: startFormatted },
+    {
+      label: "Probationary Period:",
+      val: `${offer.probationMonths ?? 3} Months with structured performance review`,
+    },
+  ];
+
+  for (const term of terms) {
+    page.drawText(term.label, {
+      x: margin + 15,
+      y: cardY,
+      size: 9,
+      font: bold,
+      color: COLOR.navy,
+    });
+    page.drawText(term.val, {
+      x: margin + 185,
+      y: cardY,
+      size: 9,
+      font,
+      color: COLOR.black,
+    });
+    cardY -= 17;
+  }
+
+  y -= cardHeight + 25;
+
+  // Benefits & Additional Conditions
+  if (offer.benefits) {
+    page.drawText("Benefits & Entitlements:", {
+      x: margin,
+      y,
+      size: 9.5,
+      font: bold,
+      color: COLOR.navy,
+    });
+    y -= 14;
+    page.drawText(offer.benefits, {
+      x: margin + 10,
+      y,
+      size: 9,
+      font,
+      color: COLOR.black,
+    });
+    y -= 18;
+  }
+
+  if (offer.conditions) {
+    page.drawText("Conditions of Appointment:", {
+      x: margin,
+      y,
+      size: 9.5,
+      font: bold,
+      color: COLOR.navy,
+    });
+    y -= 14;
+    page.drawText(offer.conditions, {
+      x: margin + 10,
+      y,
+      size: 9,
+      font,
+      color: COLOR.black,
+    });
+    y -= 18;
+  }
+
+  // Acceptance clause
+  const expiryFormatted = offer.expiresAt
+    ? new Date(offer.expiresAt).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      })
+    : "within 14 days of receipt";
+
+  const closingMsg =
+    `Please review this offer carefully. To confirm your acceptance, please sign and return a copy of this letter ` +
+    `by ${expiryFormatted}. We look forward to welcoming you to our school community and working together toward educational excellence.`;
+
+  const closingWords = closingMsg.split(" ");
+  let closeLine = "";
+  for (const word of closingWords) {
+    const testLine = closeLine ? `${closeLine} ${word}` : word;
+    const lineWidth = font.widthOfTextAtSize(testLine, 9);
+    if (lineWidth > width - margin * 2) {
+      page.drawText(closeLine, { x: margin, y, size: 9, font, color: COLOR.black });
+      y -= 13;
+      closeLine = word;
+    } else {
+      closeLine = testLine;
+    }
+  }
+  if (closeLine) {
+    page.drawText(closeLine, { x: margin, y, size: 9, font, color: COLOR.black });
+    y -= 15;
+  }
+
+  // Signature Block
+  const sigY = 90;
+  // School representative
+  page.drawLine({
+    start: { x: margin, y: sigY },
+    end: { x: margin + 200, y: sigY },
+    thickness: 0.8,
+    color: COLOR.gray,
+  });
+  page.drawText("Authorized School Representative / Principal", {
+    x: margin,
+    y: sigY - 12,
+    size: 8,
+    font: bold,
+    color: COLOR.navy,
+  });
+  page.drawText(`${school.name} — Stamp & Signature`, {
+    x: margin,
+    y: sigY - 22,
+    size: 7,
+    font,
+    color: COLOR.gray,
+  });
+
+  // Candidate acceptance signature
+  page.drawLine({
+    start: { x: width - margin - 200, y: sigY },
+    end: { x: width - margin, y: sigY },
+    thickness: 0.8,
+    color: COLOR.gray,
+  });
+  page.drawText("Candidate Acceptance Signature", {
+    x: width - margin - 200,
+    y: sigY - 12,
+    size: 8,
+    font: bold,
+    color: COLOR.navy,
+  });
+  page.drawText(`I accept the terms stated above  |  Date: ____________`, {
+    x: width - margin - 200,
+    y: sigY - 22,
+    size: 7,
+    font,
+    color: COLOR.gray,
+  });
+
+  return Buffer.from(await doc.save());
+}
+
+
 

@@ -49,6 +49,7 @@ const NAV_CONFIG = {
       section: "nav.section_academic",
       items: [
         { to: "/students", icon: GraduationCap, label: "nav.students" },
+        { to: "/parents", icon: Users, label: "nav.parents" },
         { to: "/classes", icon: Users, label: "nav.classes" },
         { to: "/subjects", icon: BookOpen, label: "nav.subjects" },
         { to: "/assignments", icon: ClipboardList, label: "nav.assignments" },
@@ -114,11 +115,22 @@ const NAV_CONFIG = {
           children: [
             { to: "/report-cards", label: "nav.report_cards" },
             { to: "/certificates", label: "nav.certificates" },
+            { to: "/external-exams", label: "nav.external_exams" },
+            { to: "/ceremonies", label: "nav.ceremonies" },
             { to: "/id-cards", label: "nav.id_cards" },
           ],
         },
         { to: "/library", icon: Library, label: "nav.library" },
-        { to: "/staff", icon: UserCog, label: "nav.staff_hr" },
+        {
+          icon: UserCog,
+          label: "nav.staff_hr",
+          children: [
+            { to: "/employees", label: "nav.employees_directory" },
+            { to: "/hr-dashboard", label: "nav.hr_analytics" },
+            { to: "/recruiting", label: "nav.recruiting_pipeline" },
+            { to: "/staff", label: "nav.system_users" },
+          ],
+        },
         { to: "/files", icon: FileText, label: "nav.files" },
         { to: "/ai", icon: Brain, label: "nav.ai_insights" },
       ],
@@ -172,6 +184,8 @@ const NAV_CONFIG = {
           children: [
             { to: "/report-cards", label: "nav.report_cards" },
             { to: "/certificates", label: "nav.certificates" },
+            { to: "/external-exams", label: "nav.external_exams" },
+            { to: "/ceremonies", label: "nav.ceremonies" },
           ],
         },
       ],
@@ -263,6 +277,7 @@ const NAV_CONFIG = {
       items: [
         { to: "/assignments", icon: ClipboardList, label: "nav.assignments" },
         { to: "/exams", icon: CheckSquare, label: "nav.exams" },
+        { to: "/external-exams/mine", icon: Award, label: "nav.my_external_exams" },
         { to: "/tutorials", icon: GraduationCap, label: "nav.tutorials" },
         { to: "/grades/mine", icon: BookOpen, label: "nav.my_grades" },
         { to: "/timetable", icon: Calendar, label: "nav.timetable" },
@@ -326,6 +341,7 @@ const NAV_CONFIG = {
         { to: "/tutorials", icon: GraduationCap, label: "nav.tutorials" },
         { to: "/student-support/my-support", icon: HeartHandshake, label: "nav.my_support" },
         { to: "/grades/mine", icon: BookOpen, label: "nav.grades" },
+        { to: "/external-exams/mine", icon: Award, label: "nav.my_external_exams" },
         { to: "/certificates/mine", icon: Award, label: "nav.my_certificates" },
         { to: "/attendance/my", icon: CalendarCheck, label: "nav.attendance" },
         { to: "/assignments", icon: ClipboardList, label: "nav.assignments" },
@@ -358,6 +374,8 @@ const NAV_CONFIG = {
   ],
 };
 
+NAV_CONFIG.SUPER_ADMIN = NAV_CONFIG.ADMIN;
+
 export default function Sidebar() {
   const { user, logout } = useAuthStore();
   const { sidebarCollapsed, collapseSidebar, sidebarOpen } = useUIStore();
@@ -387,7 +405,8 @@ export default function Sidebar() {
     }
   }, [rooms, setRooms, setUnread]);
 
-  const navItems = NAV_CONFIG[user?.role] ?? NAV_CONFIG.STUDENT;
+  const roleKey = user?.role === "SUPER_ADMIN" ? "ADMIN" : user?.role;
+  const navItems = NAV_CONFIG[roleKey] ?? NAV_CONFIG[user?.role] ?? NAV_CONFIG.ADMIN;
   const unread = totalUnread();
 
   const handleLogout = async () => {

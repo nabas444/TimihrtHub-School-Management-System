@@ -237,6 +237,134 @@ enum TutorialEnrollmentStatus {
   DROPPED
 }
 
+enum MilestoneType {
+  NONE
+  EXTERNAL_EXAM
+  CEREMONY
+}
+
+enum ExternalExamRegistrationStatus {
+  NOT_REGISTERED
+  REGISTERED
+  SAT
+  ABSENT
+  RESULT_PENDING
+  RESULT_RECORDED
+}
+
+enum CeremonyType {
+  GRADUATION
+  COMPLETION
+  OTHER
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  INTERN
+  TEMPORARY
+  VOLUNTEER
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  ON_LEAVE
+  PROBATION
+  SUSPENDED
+  TERMINATED
+  RESIGNED
+}
+
+enum RequisitionStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  FILLED
+  CANCELLED
+}
+
+enum PostingStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+}
+
+enum ApplicationStage {
+  APPLIED
+  SCREENING
+  INTERVIEW
+  OFFER
+  HIRED
+  REJECTED
+}
+
+enum InterviewFormat {
+  IN_PERSON
+  ONLINE
+  PHONE
+}
+
+enum InterviewRecommendation {
+  STRONG_HIRE
+  HIRE
+  HOLD
+  NO_HIRE
+  STRONG_NO_HIRE
+}
+
+enum OfferStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  DECLINED
+  EXPIRED
+  CANCELLED
+}
+
+enum OnboardingStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum OnboardingItemStatus {
+  PENDING
+  COMPLETED
+  WAIVED
+}
+
+enum EmployeeDocumentType {
+  CONTRACT
+  ID_CARD
+  DEGREE_DIPLOMA
+  TEACHING_LICENSE
+  WORK_PERMIT
+  POLICE_CLEARANCE
+  MEDICAL_REPORT
+  RESUME
+  CERTIFICATE
+  OTHER
+}
+
+enum StaffDisciplinaryType {
+  VERBAL_WARNING
+  WRITTEN_WARNING
+  SUSPENSION
+  INQUIRY
+  COMMENDATION
+  OTHER
+}
+
+enum OffboardingStatus {
+  INITIATED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // SCHOOL (Tenant root — every record belongs to a school)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -283,6 +411,22 @@ model School {
   annualPlans   AnnualPlan[]
   supportPrograms SupportProgram[]
   tutorialSessions TutorialSession[]
+  externalExamCheckpoints ExternalExamCheckpoint[]
+  ceremonyEvents CeremonyEvent[]
+
+  // HR & Recruiting
+  employees             Employee[]
+  jobRequisitions       JobRequisition[]
+  jobPostings           JobPosting[]
+  jobApplications       JobApplication[]
+  jobInterviews         JobInterview[]
+  jobOffers             JobOffer[]
+  onboardingChecklists  OnboardingChecklist[]
+  employeeDocuments     EmployeeDocument[]
+  performanceReviews    PerformanceReview[]
+  staffTrainings        StaffTraining[]
+  staffDisciplinaryRecords StaffDisciplinaryRecord[]
+  offboardingRecords    OffboardingRecord[]
 
   @@map("schools")
 }
@@ -421,6 +565,17 @@ model User {
   // Student Support
   approvedSupportEnrollments StudentSupportEnrollment[] @relation("SupportEnrollmentApprover")
 
+  // External Exam Records
+  externalExamRecordsRecorded ExternalExamRecord[] @relation("ExternalExamRecorder")
+
+  // HR & Recruiting
+  employeeProfile             Employee?
+  requestedRequisitions       JobRequisition[]      @relation("RequisitionRequester")
+  approvedRequisitions        JobRequisition[]      @relation("RequisitionApprover")
+  interviews                  JobInterview[]        @relation("InterviewInterviewer")
+  interviewFeedbacks          InterviewFeedback[]   @relation("FeedbackInterviewer")
+  performanceReviewsAuthored  PerformanceReview[]   @relation("PerformanceReviewer")
+
   school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
 
   @@unique([schoolId, email])
@@ -523,6 +678,8 @@ model StudentProfile {
   certificates          Certificate[]
   supportEnrollments    StudentSupportEnrollment[]
   tutorialEnrollments   TutorialEnrollment[]
+  externalExamRecords   ExternalExamRecord[]
+  ceremonyParticipants  CeremonyParticipant[]
 
   @@map("student_profiles")
 }
@@ -610,20 +767,23 @@ model ParentStudentLink {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model GradeLevel {
-  id        String   @id @default(uuid())
-  schoolId  String
-  name      String // Grade 1, Grade 10, Form 3, etc.
-  level     Int // numeric order
-  createdAt DateTime @default(now())
+  id            String        @id @default(uuid())
+  schoolId      String
+  name          String // Grade 1, Grade 10, Form 3, etc.
+  level         Int // numeric order
+  milestoneType MilestoneType @default(NONE)
+  createdAt     DateTime      @default(now())
 
-  school           School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  classes          Class[]
-  subjects         Subject[]
-  students         StudentProfile[]
-  exams            Exam[]
-  teachers         TeacherProfile[]  @relation("TeacherGradeLevel")
-  announcements    Announcement[]
-  tutorialSessions TutorialSession[]
+  school                  School                   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  classes                 Class[]
+  subjects                Subject[]
+  students                StudentProfile[]
+  exams                   Exam[]
+  teachers                TeacherProfile[]         @relation("TeacherGradeLevel")
+  announcements           Announcement[]
+  tutorialSessions        TutorialSession[]
+  externalExamCheckpoints ExternalExamCheckpoint[]
+  ceremonyEvents          CeremonyEvent[]
 
   @@unique([schoolId, level])
   @@map("grade_levels")
@@ -1175,6 +1335,14 @@ model LookupValue {
   teacherHouses          TeacherProfile[] @relation("TeacherHouse")
   adminReligions         AdminProfile[]   @relation("AdminReligion")
 
+  // HR & Recruiting
+  employeeDepartments    Employee[]       @relation("EmployeeDepartment")
+  employeePositions      Employee[]       @relation("EmployeePosition")
+  requisitionDepartments JobRequisition[] @relation("RequisitionDepartment")
+  requisitionPositions   JobRequisition[] @relation("RequisitionPosition")
+  postingDepartments     JobPosting[]     @relation("PostingDepartment")
+  postingPositions       JobPosting[]     @relation("PostingPosition")
+
   @@index([schoolId, type])
   @@map("lookup_values")
 }
@@ -1236,39 +1404,45 @@ model LibraryIssue {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model LeaveRequest {
-  id               String      @id @default(uuid())
-  teacherProfileId String
+  id               String          @id @default(uuid())
+  teacherProfileId String?
+  employeeId       String?
   type             String // SICK | ANNUAL | MATERNITY | UNPAID
   startDate        DateTime
   endDate          DateTime
   reason           String
-  status           LeaveStatus @default(PENDING)
+  status           LeaveStatus     @default(PENDING)
   approvedById     String?
   approvedAt       DateTime?
-  documents        String[]    @default([])
-  createdAt        DateTime    @default(now())
+  documents        String[]        @default([])
+  createdAt        DateTime        @default(now())
 
-  teacherProfile TeacherProfile @relation(fields: [teacherProfileId], references: [id], onDelete: Cascade)
+  teacherProfile   TeacherProfile? @relation(fields: [teacherProfileId], references: [id], onDelete: Cascade)
+  employee         Employee?       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
+  @@index([employeeId])
   @@map("leave_requests")
 }
 
 model PayrollRecord {
-  id               String    @id @default(uuid())
-  teacherProfileId String
+  id               String          @id @default(uuid())
+  teacherProfileId String?
+  employeeId       String?
   month            Int
   year             Int
   baseSalary       Float
-  allowances       Float     @default(0)
-  deductions       Float     @default(0)
+  allowances       Float           @default(0)
+  deductions       Float           @default(0)
   netPay           Float
   paidAt           DateTime?
   notes            String?
-  createdAt        DateTime  @default(now())
+  createdAt        DateTime        @default(now())
 
-  teacherProfile TeacherProfile @relation(fields: [teacherProfileId], references: [id])
+  teacherProfile   TeacherProfile? @relation(fields: [teacherProfileId], references: [id])
+  employee         Employee?       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@unique([teacherProfileId, month, year])
+  @@index([employeeId, month, year])
   @@map("payroll_records")
 }
 
@@ -1426,6 +1600,7 @@ model Certificate {
   studentProfile StudentProfile? @relation(fields: [studentProfileId], references: [id])
   user           User?           @relation("CertificateRecipient", fields: [userId], references: [id])
   signedBy       User?           @relation("CertificateSigner", fields: [signedById], references: [id])
+  ceremonyParticipants CeremonyParticipant[]
 
   @@index([schoolId, type])
   @@map("certificates")
@@ -1581,5 +1756,509 @@ model TutorialAttendanceRecord {
 
   @@unique([tutorialSessionId, studentProfileId, date])
   @@map("tutorial_attendance_records")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EXTERNAL EXAM CHECKPOINTS & RECORDS (Regional / National Exams)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model ExternalExamCheckpoint {
+  id                String   @id @default(uuid())
+  schoolId          String
+  gradeLevelId      String
+  academicYear      String
+  name              String    // e.g. "Grade 6 Regional Examination", "ESSLCE / University Entrance Examination"
+  administeringBody String?   // e.g. "Regional Education Bureau", "EAES"
+  examWindowStart   DateTime?
+  examWindowEnd     DateTime?
+  passCutoff        Float?    // the officially published passing/cutoff mark, if known — informational, doesn't replace per-record isPassing
+  notes             String?
+  createdAt         DateTime @default(now())
+
+  school     School     @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  gradeLevel GradeLevel @relation(fields: [gradeLevelId], references: [id])
+  records    ExternalExamRecord[]
+
+  @@unique([schoolId, gradeLevelId, academicYear])
+  @@map("external_exam_checkpoints")
+}
+
+model ExternalExamRecord {
+  id                 String   @id @default(uuid())
+  checkpointId       String
+  studentProfileId   String
+  registrationNumber String?
+  examCenter         String?
+  status             ExternalExamRegistrationStatus @default(NOT_REGISTERED)
+  score              Float?
+  grade              String?    // for bodies that issue a band/letter rather than a raw score
+  isPassing          Boolean?
+  resultDocumentUrl  String?    // uploaded scan of the official result slip/certificate
+  resultPublishedAt  DateTime?
+  recordedById       String?
+  notes              String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  checkpoint     ExternalExamCheckpoint @relation(fields: [checkpointId], references: [id], onDelete: Cascade)
+  studentProfile StudentProfile         @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+  recordedBy     User?                  @relation("ExternalExamRecorder", fields: [recordedById], references: [id])
+
+  @@unique([checkpointId, studentProfileId])
+  @@index([checkpointId, status])
+  @@map("external_exam_records")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GRADUATION & COMPLETION CEREMONIES
+// ─────────────────────────────────────────────────────────────────────────────
+
+model CeremonyEvent {
+  id           String       @id @default(uuid())
+  schoolId     String
+  gradeLevelId String?      // the milestone grade level this ceremony celebrates (e.g. final KG year); optional for a whole-school event
+  type         CeremonyType @default(GRADUATION)
+  academicYear String
+  title        String       // e.g. "Kindergarten Graduation 2026"
+  ceremonyDate DateTime?
+  venue        String?
+  attireNote   String?      // e.g. "Cap and gown, provided by school"
+  program      String?      // free-text agenda/order of program
+  createdAt    DateTime     @default(now())
+
+  school       School                @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  gradeLevel   GradeLevel?           @relation(fields: [gradeLevelId], references: [id])
+  participants CeremonyParticipant[]
+
+  @@map("ceremony_events")
+}
+
+model CeremonyParticipant {
+  id                  String   @id @default(uuid())
+  ceremonyEventId     String
+  studentProfileId    String
+  certificateId       String?  // linked once a GRADUATION certificate is issued for this participant
+  attendanceConfirmed Boolean  @default(false)
+  createdAt           DateTime @default(now())
+
+  ceremonyEvent  CeremonyEvent  @relation(fields: [ceremonyEventId], references: [id], onDelete: Cascade)
+  studentProfile StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+  certificate    Certificate?   @relation(fields: [certificateId], references: [id])
+
+  @@unique([ceremonyEventId, studentProfileId])
+  @@map("ceremony_participants")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HR & RECRUITING MODULE
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Employee {
+  id                String         @id @default(uuid())
+  schoolId          String
+  userId            String?        @unique
+  employeeNumber    String         // e.g. EMP-2026-001
+  firstName         String
+  middleName        String?
+  lastName          String
+  email             String?
+  phone             String?
+  gender            Gender?
+  dateOfBirth       DateTime?
+  nationalId        String?
+  hireDate          DateTime       @default(now())
+  employmentType    EmploymentType @default(FULL_TIME)
+  status            EmployeeStatus @default(ACTIVE)
+
+  departmentId      String?
+  positionId        String?
+  managerId         String?
+
+  salary            Float?
+  contractStart     DateTime?
+  contractEnd       DateTime?
+  probationEnd      DateTime?
+
+  address           String?
+  city              String?
+  emergencyContact  String?
+  emergencyPhone    String?
+  bankName          String?
+  bankAccountNumber String?
+  notes             String?
+
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  school            School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  user              User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  department        LookupValue?   @relation("EmployeeDepartment", fields: [departmentId], references: [id])
+  position          LookupValue?   @relation("EmployeePosition", fields: [positionId], references: [id])
+  manager           Employee?      @relation("EmployeeReportingLine", fields: [managerId], references: [id])
+  directReports     Employee[]     @relation("EmployeeReportingLine")
+
+  documents         EmployeeDocument[]
+  onboardingChecklists OnboardingChecklist[]
+  disciplinaryRecords  StaffDisciplinaryRecord[]
+  performanceReviews   PerformanceReview[] @relation("EmployeePerformanceReviews")
+  trainingRecords      StaffTraining[]
+  offboardingRecords   OffboardingRecord[]
+  leaveRequests        LeaveRequest[]
+  payrollRecords       PayrollRecord[]
+
+  hiredFromApplications JobApplication[]
+
+  @@unique([schoolId, employeeNumber])
+  @@index([schoolId, status])
+  @@index([schoolId, departmentId])
+  @@index([schoolId, positionId])
+  @@map("employees")
+}
+
+model JobRequisition {
+  id                String            @id @default(uuid())
+  schoolId          String
+  requisitionNumber String            // e.g. REQ-2026-01
+  title             String
+  departmentId      String?
+  positionId        String?
+  vacanciesCount    Int               @default(1)
+  employmentType    EmploymentType    @default(FULL_TIME)
+  reason            String?           // REPLACEMENT | EXPANSION | NEW_SECTION
+  salaryMin         Float?
+  salaryMax         Float?
+  description       String?
+  justification     String?
+  status            RequisitionStatus @default(DRAFT)
+  requestedById     String?
+  approvedById      String?
+  approvedAt        DateTime?
+  rejectionReason   String?
+  targetStartDate   DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  school            School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  department        LookupValue?      @relation("RequisitionDepartment", fields: [departmentId], references: [id])
+  position          LookupValue?      @relation("RequisitionPosition", fields: [positionId], references: [id])
+  requestedBy       User?             @relation("RequisitionRequester", fields: [requestedById], references: [id])
+  approvedBy        User?             @relation("RequisitionApprover", fields: [approvedById], references: [id])
+
+  postings          JobPosting[]
+
+  @@unique([schoolId, requisitionNumber])
+  @@index([schoolId, status])
+  @@map("job_requisitions")
+}
+
+model JobPosting {
+  id                String            @id @default(uuid())
+  schoolId          String
+  requisitionId     String?
+  title             String
+  slug              String
+  departmentId      String?
+  positionId        String?
+  employmentType    EmploymentType    @default(FULL_TIME)
+  location          String?           // Campus / Location
+  description       String
+  requirements      String?
+  benefits          String?
+  salaryRange       String?
+  closingDate       DateTime?
+  status            PostingStatus     @default(DRAFT)
+  publishedAt       DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  school            School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  requisition       JobRequisition?   @relation(fields: [requisitionId], references: [id])
+  department        LookupValue?      @relation("PostingDepartment", fields: [departmentId], references: [id])
+  position          LookupValue?      @relation("PostingPosition", fields: [positionId], references: [id])
+
+  applications      JobApplication[]
+
+  @@unique([schoolId, slug])
+  @@index([schoolId, status])
+  @@map("job_postings")
+}
+
+model JobApplication {
+  id                String            @id @default(uuid())
+  schoolId          String
+  postingId         String
+  candidateName     String
+  email             String
+  phone             String?
+  resumeUrl         String?
+  coverLetter       String?
+  portfolioUrl      String?
+  experienceYears   Float?
+  currentEmployer   String?
+  highestEducation  String?
+  stage             ApplicationStage  @default(APPLIED)
+  rating            Float?            // 1 to 5 stars
+  rejectionReason   String?
+  notes             String?
+  hiredEmployeeId   String?
+  appliedAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  school            School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  posting           JobPosting        @relation(fields: [postingId], references: [id], onDelete: Cascade)
+  hiredEmployee     Employee?         @relation(fields: [hiredEmployeeId], references: [id])
+
+  interviews        JobInterview[]
+  offers            JobOffer[]
+
+  @@index([schoolId, stage])
+  @@index([postingId, stage])
+  @@map("job_applications")
+}
+
+model JobInterview {
+  id                String            @id @default(uuid())
+  schoolId          String
+  applicationId     String
+  title             String            // e.g. "Round 1 Interview"
+  scheduledAt       DateTime
+  durationMinutes   Int               @default(45)
+  format            InterviewFormat   @default(IN_PERSON)
+  locationOrLink    String?           // Room or meeting URL
+  notes             String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  school            School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  application       JobApplication    @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  interviewers      User[]            @relation("InterviewInterviewer")
+  feedbacks         InterviewFeedback[]
+
+  @@index([applicationId])
+  @@map("job_interviews")
+}
+
+model InterviewFeedback {
+  id                String                  @id @default(uuid())
+  interviewId       String
+  interviewerId     String
+  score             Float                   // Overall 1 to 5
+  recommendation    InterviewRecommendation @default(HOLD)
+  criteriaScores    Json?
+  strengths         String?
+  concerns          String?
+  notes             String?
+  createdAt         DateTime                @default(now())
+
+  interview         JobInterview            @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  interviewer       User                    @relation("FeedbackInterviewer", fields: [interviewerId], references: [id])
+
+  @@unique([interviewId, interviewerId])
+  @@map("interview_feedbacks")
+}
+
+model JobOffer {
+  id                String            @id @default(uuid())
+  schoolId          String
+  applicationId     String
+  offerNumber       String            // e.g. OFR-2026-001
+  positionTitle     String
+  departmentName    String?
+  employmentType    EmploymentType    @default(FULL_TIME)
+  offeredSalary     Float
+  salaryPeriod      String            @default("MONTHLY") // MONTHLY | ANNUAL
+  startDate         DateTime
+  probationMonths   Int               @default(3)
+  benefits          String?
+  conditions        String?
+  status            OfferStatus       @default(DRAFT)
+  sentAt            DateTime?
+  expiresAt         DateTime?
+  acceptedAt        DateTime?
+  declinedAt        DateTime?
+  signedLetterUrl   String?
+  notes             String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  school            School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  application       JobApplication    @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, offerNumber])
+  @@map("job_offers")
+}
+
+model OnboardingChecklist {
+  id                String            @id @default(uuid())
+  schoolId          String
+  employeeId        String
+  title             String            // e.g. "New Employee Onboarding"
+  status            OnboardingStatus  @default(IN_PROGRESS)
+  dueDate           DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  school            School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  employee          Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  items             OnboardingItem[]
+
+  @@map("onboarding_checklists")
+}
+
+model OnboardingItem {
+  id                String               @id @default(uuid())
+  checklistId       String
+  title             String
+  description       String?
+  category          String?              // DOCUMENTATION | IT_SETUP | ORIENTATION | LOGISTICS
+  status            OnboardingItemStatus @default(PENDING)
+  isRequired        Boolean              @default(true)
+  completedAt       DateTime?
+  completedById     String?
+  notes             String?
+
+  checklist         OnboardingChecklist  @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+
+  @@map("onboarding_items")
+}
+
+model EmployeeDocument {
+  id                String               @id @default(uuid())
+  schoolId          String
+  employeeId        String
+  type              EmployeeDocumentType @default(OTHER)
+  title             String
+  documentNumber    String?
+  fileUrl           String
+  fileSize          Int?
+  mimeType          String?
+  issueDate         DateTime?
+  expiryDate        DateTime?
+  reminderDays      Int                  @default(30)
+  isVerified        Boolean              @default(false)
+  verifiedById      String?
+  verifiedAt        DateTime?
+  notes             String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  school            School               @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  employee          Employee             @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, expiryDate])
+  @@index([employeeId, type])
+  @@map("employee_documents")
+}
+
+model PerformanceReview {
+  id                String            @id @default(uuid())
+  schoolId          String
+  employeeId        String
+  reviewerId        String
+  cycleName         String            // e.g. "Annual Review 2025/2026"
+  reviewPeriodStart DateTime
+  reviewPeriodEnd   DateTime
+  selfReviewNotes   String?
+  reviewerNotes     String?
+  competencyScores  Json?
+  overallRating     Float?            // 1 to 5
+  goalsSet          String?
+  developmentPlan   String?
+  status            String            @default("DRAFT") // DRAFT | SUBMITTED | COMPLETED
+  completedAt       DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  school            School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  employee          Employee          @relation("EmployeePerformanceReviews", fields: [employeeId], references: [id], onDelete: Cascade)
+  reviewer          User              @relation("PerformanceReviewer", fields: [reviewerId], references: [id])
+
+  @@index([employeeId])
+  @@map("performance_reviews")
+}
+
+model StaffTraining {
+  id                String            @id @default(uuid())
+  schoolId          String
+  employeeId        String
+  title             String
+  provider          String?
+  category          String?           // PEDAGOGY | LEADERSHIP | TECH | SAFETY | SPECIAL_ED
+  hoursCompleted    Float?
+  startDate         DateTime?
+  completionDate    DateTime
+  expiryDate        DateTime?
+  certificateUrl    String?
+  notes             String?
+  createdAt         DateTime          @default(now())
+
+  school            School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  employee          Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@map("staff_trainings")
+}
+
+model StaffDisciplinaryRecord {
+  id                String                @id @default(uuid())
+  schoolId          String
+  employeeId        String
+  type              StaffDisciplinaryType @default(WRITTEN_WARNING)
+  incidentDate      DateTime              @default(now())
+  title             String
+  description       String
+  actionTaken       String?
+  isResolved        Boolean               @default(false)
+  resolvedAt        DateTime?
+  resolutionNotes   String?
+  recordedById      String?
+  documentUrl       String?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  school            School                @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  employee          Employee              @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@map("staff_disciplinary_records")
+}
+
+model OffboardingRecord {
+  id                String            @id @default(uuid())
+  schoolId          String
+  employeeId        String
+  type              String            // RESIGNATION | TERMINATION | RETIREMENT | END_OF_CONTRACT
+  reason            String?
+  noticeDate        DateTime?
+  lastWorkingDay    DateTime
+  exitInterviewNotes String?
+  finalSettlementNotes String?
+  status            OffboardingStatus @default(INITIATED)
+  completedAt       DateTime?
+  userDeactivated   Boolean           @default(false)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  school            School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  employee          Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  checklistItems    ExitChecklistItem[]
+
+  @@map("offboarding_records")
+}
+
+model ExitChecklistItem {
+  id                String            @id @default(uuid())
+  offboardingId     String
+  title             String            // e.g. "Laptop Return", "Revoke Email Access"
+  category          String?           // ASSETS | IT_ACCESS | FINANCE | HR
+  isCompleted       Boolean           @default(false)
+  completedAt       DateTime?
+  completedBy       String?
+  notes             String?
+
+  offboarding       OffboardingRecord @relation(fields: [offboardingId], references: [id], onDelete: Cascade)
+
+  @@map("exit_checklist_items")
 }
 

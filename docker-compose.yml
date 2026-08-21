@@ -61,6 +61,23 @@ services:
         condition: service_healthy
     command: npm run dev
 
+  # ── Web Frontend (dev) ──────────────────────────────────────────────────────
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile.dev
+    container_name: timhirthub_web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./apps/web:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_PROXY_TARGET=http://server:5000
+    depends_on:
+      - server
+
 volumes:
   postgres_data:
   redis_data:

@@ -402,10 +402,15 @@ export default function TutorialSessionsPage() {
           icon={GraduationCap}
           title="No tutorial sessions scheduled"
           description="Create extra lectures or weekend tutorial classes for students who need additional assistance."
-          action={{
-            label: "Schedule Session",
-            onClick: handleOpenCreate,
-          }}
+          action={
+            <button
+              type="button"
+              className="btn-primary btn-sm"
+              onClick={handleOpenCreate}
+            >
+              Schedule Session
+            </button>
+          }
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">

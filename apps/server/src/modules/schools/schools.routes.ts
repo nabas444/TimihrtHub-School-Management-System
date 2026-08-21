@@ -5,7 +5,7 @@ import { AppError } from "../../middleware/errorHandler";
 import { cacheDel, cacheGet, cacheSet } from "../../config/redis";
 import { sendSuccess } from "../../utils/response";
 import { authorize } from "../../middleware/auth";
-import { Role } from "@prisma/client";
+import { Role, MilestoneType } from "@prisma/client";
 import { getStudentPerformanceInsights } from "../academics/academics.service";
 
 const router = Router();
@@ -533,7 +533,12 @@ router.get(
         await Promise.all(
           Array.from({ length: 12 }, (_, i) => i + 1).map((lvl) =>
             db.gradeLevel.create({
-              data: { schoolId, name: `Grade ${lvl}`, level: lvl },
+              data: {
+                schoolId,
+                name: `Grade ${lvl}`,
+                level: lvl,
+                milestoneType: MilestoneType.NONE,
+              },
             }),
           ),
         );
@@ -557,12 +562,178 @@ router.post(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const data = z
-        .object({ name: z.string(), level: z.number().int().positive() })
+        .object({
+          name: z.string(),
+          level: z.number().int(),
+          milestoneType: z.nativeEnum(MilestoneType).optional().default(MilestoneType.NONE),
+        })
         .parse(req.body);
       const gl = await db.gradeLevel.create({
         data: { schoolId: req.user.schoolId, ...data },
       });
       sendSuccess(res, gl, "Grade level created", 201);
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+router.patch(
+  "/grade-levels/:id",
+  authorize(...isAdmin),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+      const data = z
+        .object({
+          name: z.string().optional(),
+          level: z.number().int().optional(),
+          milestoneType: z.nativeEnum(MilestoneType).optional(),
+        })
+        .parse(req.body);
+
+      const existing = await db.gradeLevel.findFirst({
+        where: { id, schoolId: req.user.schoolId },
+      });
+      if (!existing) throw new AppError("Grade level not found", 404);
+
+      const updated = await db.gradeLevel.update({
+        where: { id },
+        data,
+      });
+      sendSuccess(res, updated, "Grade level updated");
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// Suggest Ethiopian milestone defaults (Grade 6 & 8 -> EXTERNAL_EXAM, Grade 12 -> EXTERNAL_EXAM, KG -> CEREMONY)
+router.get(
+  "/grade-levels/suggested-milestones",
+  authorize(...isAdmin),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const schoolId = req.user.schoolId;
+      const levels = await db.gradeLevel.findMany({
+        where: { schoolId },
+        orderBy: { level: "asc" },
+      });
+
+      const suggestions = levels.map((lvl) => {
+        const nameLower = lvl.name.toLowerCase();
+        let suggestedType: MilestoneType = MilestoneType.NONE;
+        let suggestionReason = "Standard academic year";
+
+        if (
+          nameLower.includes("grade 6") ||
+          lvl.level === 6 ||
+          nameLower.includes("primary 6")
+        ) {
+          suggestedType = MilestoneType.EXTERNAL_EXAM;
+          suggestionReason = "Grade 6 Regional Ministry Exam";
+        } else if (
+          nameLower.includes("grade 8") ||
+          lvl.level === 8 ||
+          nameLower.includes("middle 8")
+        ) {
+          suggestedType = MilestoneType.EXTERNAL_EXAM;
+          suggestionReason = "Grade 8 Regional Ministry Exam";
+        } else if (
+          nameLower.includes("grade 12") ||
+          lvl.level === 12 ||
+          nameLower.includes("form 4")
+        ) {
+          suggestedType = MilestoneType.EXTERNAL_EXAM;
+          suggestionReason = "Grade 12 National ESSLCE / University Entrance Exam";
+        } else if (
+          nameLower.includes("kindergarten") ||
+          nameLower.includes("kg 3") ||
+          nameLower.includes("kg 2") ||
+          nameLower.includes("kg") ||
+          nameLower.includes("prep") ||
+          nameLower.includes("nursery") ||
+          lvl.level === 0
+        ) {
+          suggestedType = MilestoneType.CEREMONY;
+          suggestionReason = "Kindergarten Completion Ceremony";
+        }
+
+        return {
+          id: lvl.id,
+          name: lvl.name,
+          level: lvl.level,
+          currentMilestoneType: lvl.milestoneType,
+          suggestedMilestoneType: suggestedType,
+          suggestionReason,
+        };
+      });
+
+      sendSuccess(res, suggestions);
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+router.post(
+  "/grade-levels/apply-suggested-milestones",
+  authorize(...isAdmin),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const schoolId = req.user.schoolId;
+      const { mappings } = z
+        .object({
+          mappings: z.array(
+            z.object({
+              id: z.string(),
+              milestoneType: z.nativeEnum(MilestoneType),
+            }),
+          ),
+        })
+        .parse(req.body);
+
+      const updates = await Promise.all(
+        mappings.map((m) =>
+          db.gradeLevel.updateMany({
+            where: { id: m.id, schoolId },
+            data: { milestoneType: m.milestoneType },
+          }),
+        ),
+      );
+
+      sendSuccess(res, { updatedCount: updates.length }, "Milestones updated successfully");
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+router.delete(
+  "/grade-levels/:id",
+  authorize(...isAdmin),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+      const schoolId = req.user.schoolId;
+
+      const gl = await db.gradeLevel.findFirst({
+        where: { id, schoolId },
+        include: {
+          _count: { select: { students: true, classes: true } },
+        },
+      });
+      if (!gl) throw new AppError("Grade level not found", 404);
+
+      if (gl._count.students > 0 || gl._count.classes > 0) {
+        throw new AppError(
+          "Cannot delete grade level that currently has classes or students assigned",
+          400,
+        );
+      }
+
+      await db.gradeLevel.delete({ where: { id } });
+      sendSuccess(res, null, "Grade level deleted");
     } catch (e) {
       next(e);
     }

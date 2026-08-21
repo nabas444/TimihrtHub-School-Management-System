@@ -140,20 +140,12 @@ export default function StaffPage() {
   const roleTabs = [
     { label: "All Staff", value: "ALL" },
     { label: "Teachers", value: "TEACHER" },
-    { label: "Parents", value: "PARENT" },
     { label: "Finance", value: "FINANCE" },
     { label: "Admins", value: "ADMIN" },
     { label: "Super Admins", value: "SUPER_ADMIN" },
   ];
 
   // ── Queries ──────────────────────────────────────────────────────
-  const { data: studentOptionsData } = useQuery({
-    queryKey: ["student-options"],
-    queryFn: () =>
-      api.get("/users?role=STUDENT&page=1&limit=200").then((r) => r.data.data),
-    staleTime: 1000 * 60 * 5,
-  });
-
   const { data: subjectsData } = useQuery({
     queryKey: ["subjects"],
     queryFn: () => api.get("/academics/subjects").then((r) => r.data.data),
@@ -619,7 +611,6 @@ export default function StaffPage() {
                   <option value="ADMIN">Administrator</option>
                   <option value="FINANCE">Finance Officer</option>
                   <option value="SUPER_ADMIN">Super Admin</option>
-                  <option value="PARENT">Parent / Guardian</option>
                 </select>
               </div>
 
@@ -741,23 +732,6 @@ export default function StaffPage() {
                 <div>
                   <label className="label font-bold">Department</label>
                   <input className="input text-xs" value={form.department} onChange={set("department")} placeholder="e.g. Academic Affairs, Finance, Operations" />
-                </div>
-              )}
-
-              {form.role === "PARENT" && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="label font-bold">Occupation</label>
-                    <input className="input text-xs" value={form.occupation} onChange={set("occupation")} placeholder="e.g. Engineer, Doctor" />
-                  </div>
-                  <div>
-                    <label className="label font-bold">Relation to Student</label>
-                    <select className="input text-xs" value={form.relation} onChange={set("relation")}>
-                      <option value="Father">Father</option>
-                      <option value="Mother">Mother</option>
-                      <option value="Guardian">Guardian</option>
-                    </select>
-                  </div>
                 </div>
               )}
             </div>

@@ -1,14 +1,17 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "../../lib/api";
-import { Save, Settings, Clock, CheckCircle, HelpCircle } from "lucide-react";
+import { Save, Settings, Clock, CheckCircle, HelpCircle, Award, Sparkles, Plus, Pencil, Check, RefreshCw } from "lucide-react";
 import PageLoader from "../../components/ui/PageLoader";
+import Modal from "../../components/ui/Modal";
 import toast from "react-hot-toast";
 
 export default function SchoolSettingsPage() {
   const qc = useQueryClient();
   const [form, setForm] = useState({});
   const [settings, setSettings] = useState({});
+  const [suggestionModalOpen, setSuggestionModalOpen] = useState(false);
+  const [suggestedMilestones, setSuggestedMilestones] = useState([]);
 
   const { data: school, isLoading } = useQuery({
     queryKey: ["school-profile"],
@@ -263,6 +266,244 @@ export default function SchoolSettingsPage() {
             {settingsMutation.isPending ? "Saving…" : "Save Settings"}
           </button>
         </div>
+      </div>
+
+      {/* Grade Levels & Milestone Checkpoints */}
+      <GradeLevelsMilestoneCard
+        onOpenSuggestions={(suggestions) => {
+          setSuggestedMilestones(suggestions);
+          setSuggestionModalOpen(true);
+        }}
+      />
+
+      {/* Ethiopian Suggestions Modal */}
+      <Modal
+        open={suggestionModalOpen}
+        onClose={() => setSuggestionModalOpen(false)}
+        title="Suggested Ethiopian Milestone Defaults"
+        size="lg"
+      >
+        <SuggestedMilestonesModalContent
+          suggestions={suggestedMilestones}
+          onClose={() => setSuggestionModalOpen(false)}
+          onApplied={() => {
+            qc.invalidateQueries({ queryKey: ["grade-levels"] });
+            setSuggestionModalOpen(false);
+          }}
+        />
+      </Modal>
+    </div>
+  );
+}
+
+function GradeLevelsMilestoneCard({ onOpenSuggestions }) {
+  const qc = useQueryClient();
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+
+  const { data: gradeLevels, isLoading } = useQuery({
+    queryKey: ["grade-levels"],
+    queryFn: () => api.get("/schools/grade-levels").then((r) => r.data.data),
+  });
+
+  const updateMilestoneMutation = useMutation({
+    mutationFn: ({ id, milestoneType }) =>
+      api.patch(`/schools/grade-levels/${id}`, { milestoneType }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["grade-levels"] });
+      toast.success("Grade milestone updated");
+    },
+    onError: (err) => {
+      toast.error(err.response?.data?.message || "Failed to update milestone");
+    },
+  });
+
+  const handleFetchSuggestions = async () => {
+    try {
+      setLoadingSuggestions(true);
+      const res = await api.get("/schools/grade-levels/suggested-milestones");
+      onOpenSuggestions(res.data.data);
+    } catch (err) {
+      toast.error("Failed to load suggestions");
+    } finally {
+      setLoadingSuggestions(false);
+    }
+  };
+
+  const sorted = (gradeLevels ?? []).slice().sort((a, b) => (a.level ?? 0) - (b.level ?? 0));
+
+  return (
+    <div className="card p-6 space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+            <Award className="w-5 h-5 text-primary-600" />
+            Grade Levels & Milestone Checkpoints
+          </h3>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Configure external examination checkpoints (Ministry/National) and graduation ceremonies per grade level.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleFetchSuggestions}
+          disabled={loadingSuggestions}
+          className="btn-secondary btn-sm text-xs flex items-center gap-1.5 border-primary-200 text-primary-700 bg-primary-50 hover:bg-primary-100 dark:bg-primary-950/40 dark:text-primary-300"
+        >
+          <Sparkles className="w-3.5 h-3.5 text-primary-600" />
+          {loadingSuggestions ? "Loading..." : "Suggest Ethiopian Defaults"}
+        </button>
+      </div>
+
+      <div className="border border-gray-200 dark:border-gray-800 rounded-xl overflow-hidden">
+        <table className="table text-xs">
+          <thead>
+            <tr>
+              <th>Grade Level</th>
+              <th>Order / Level</th>
+              <th>Milestone Configuration</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((gl) => (
+              <tr key={gl.id} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/40">
+                <td className="font-bold text-gray-900 dark:text-white">{gl.name}</td>
+                <td className="font-mono text-gray-500">{gl.level}</td>
+                <td>
+                  <select
+                    className="input text-xs py-1 px-2 font-semibold"
+                    value={gl.milestoneType || "NONE"}
+                    onChange={(e) =>
+                      updateMilestoneMutation.mutate({
+                        id: gl.id,
+                        milestoneType: e.target.value,
+                      })
+                    }
+                  >
+                    <option value="NONE">Standard / None</option>
+                    <option value="EXTERNAL_EXAM">★ External Exam (Ministry/National)</option>
+                    <option value="CEREMONY">★ Graduation / Completion Ceremony</option>
+                  </select>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function SuggestedMilestonesModalContent({ suggestions, onClose, onApplied }) {
+  const [items, setItems] = useState(
+    suggestions.map((s) => ({
+      gradeLevelId: s.gradeLevelId,
+      gradeName: s.gradeName,
+      level: s.level,
+      suggestedMilestone: s.suggestedMilestone,
+      reason: s.reason,
+      selected: s.suggestedMilestone !== "NONE",
+    })),
+  );
+
+  const applyMutation = useMutation({
+    mutationFn: (milestones) =>
+      api.post("/schools/grade-levels/apply-suggested-milestones", { milestones }),
+    onSuccess: (res) => {
+      toast.success(res.data?.message || "Milestone configuration applied");
+      onApplied();
+    },
+    onError: (err) => {
+      toast.error(err.response?.data?.message || "Failed to apply milestones");
+    },
+  });
+
+  return (
+    <div className="space-y-4">
+      <div className="p-3 bg-primary-50 dark:bg-primary-950/40 rounded-xl border border-primary-100 text-xs text-primary-900 dark:text-primary-300">
+        <p className="font-bold mb-1 flex items-center gap-1.5">
+          <Sparkles className="w-4 h-4 text-primary-600" />
+          Editable Ethiopian School Milestone Suggestions
+        </p>
+        <p>
+          Based on Ethiopia's education framework (Grade 6 & 8 regional ministry exams, Grade 12 ESSLCE national exam, and Kindergarten completion ceremony). You can customize or deselect any row before applying.
+        </p>
+      </div>
+
+      <div className="border border-gray-200 dark:border-gray-800 rounded-xl overflow-hidden max-h-72 overflow-y-auto">
+        <table className="table text-xs">
+          <thead className="sticky top-0 bg-gray-50 dark:bg-gray-900">
+            <tr>
+              <th className="w-10">Apply</th>
+              <th>Grade Level</th>
+              <th>Suggested Milestone</th>
+              <th>Context</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item, idx) => (
+              <tr key={item.gradeLevelId} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/40">
+                <td>
+                  <input
+                    type="checkbox"
+                    checked={item.selected}
+                    onChange={(e) => {
+                      const sel = e.target.checked;
+                      setItems((prev) => {
+                        const copy = [...prev];
+                        copy[idx] = { ...copy[idx], selected: sel };
+                        return copy;
+                      });
+                    }}
+                    className="rounded w-4 h-4 accent-primary-600"
+                  />
+                </td>
+                <td className="font-bold">{item.gradeName}</td>
+                <td>
+                  <select
+                    className="input text-xs py-1 px-2 font-semibold"
+                    value={item.suggestedMilestone}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setItems((prev) => {
+                        const copy = [...prev];
+                        copy[idx] = { ...copy[idx], suggestedMilestone: val };
+                        return copy;
+                      });
+                    }}
+                  >
+                    <option value="NONE">None</option>
+                    <option value="EXTERNAL_EXAM">External Exam</option>
+                    <option value="CEREMONY">Graduation Ceremony</option>
+                  </select>
+                </td>
+                <td className="text-gray-500">{item.reason}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="flex justify-end gap-2 pt-2">
+        <button type="button" className="btn-secondary" onClick={onClose}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="btn-primary"
+          disabled={applyMutation.isPending}
+          onClick={() => {
+            const payload = items
+              .filter((i) => i.selected)
+              .map((i) => ({
+                gradeLevelId: i.gradeLevelId,
+                milestoneType: i.suggestedMilestone,
+              }));
+            applyMutation.mutate(payload);
+          }}
+        >
+          {applyMutation.isPending ? "Applying..." : "Apply Selected Milestones"}
+        </button>
       </div>
     </div>
   );

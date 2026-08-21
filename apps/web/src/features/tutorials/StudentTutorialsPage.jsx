@@ -123,10 +123,15 @@ export default function StudentTutorialsPage() {
               icon={GraduationCap}
               title="You are not enrolled in any tutorial sessions"
               description="Browse available sessions to join extra review lectures and subject coaching."
-              action={{
-                label: "Explore Available Tutorials",
-                onClick: () => setActiveTab("available"),
-              }}
+              action={
+                <button
+                  type="button"
+                  className="btn-primary btn-sm"
+                  onClick={() => setActiveTab("available")}
+                >
+                  Explore Available Tutorials
+                </button>
+              }
             />
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">

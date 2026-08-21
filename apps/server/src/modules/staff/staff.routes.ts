@@ -28,7 +28,6 @@ router.get(
         Role.FINANCE,
         Role.ADMIN,
         Role.SUPER_ADMIN,
-        Role.PARENT,
       ];
 
       const normalizedRole =
@@ -239,9 +238,14 @@ router.patch(
         .parse(req.body);
       const leave = await db.leaveRequest.findUnique({
         where: { id: req.params.id },
-        include: { teacherProfile: { include: { user: true } } },
+        include: {
+          teacherProfile: { include: { user: true } },
+          employee: { include: { user: true } },
+        },
       });
-      if (!leave || leave.teacherProfile.user.schoolId !== req.user.schoolId)
+      const leaveSchoolId =
+        leave?.teacherProfile?.user.schoolId || leave?.employee?.schoolId;
+      if (!leave || leaveSchoolId !== req.user.schoolId)
         throw new AppError("Leave request not found", 404);
 
       const updated = await db.leaveRequest.update({
@@ -253,12 +257,16 @@ router.patch(
         },
       });
 
-      // Notify teacher
-      emitToUser(leave.teacherProfile.userId, "notification:new", {
-        type: "GENERAL",
-        title: `Leave ${status === "APPROVED" ? "Approved ✅" : "Rejected ❌"}`,
-        body: `Your ${leave.type} leave request has been ${status.toLowerCase()}`,
-      });
+      // Notify teacher or employee if user exists
+      const targetUserId =
+        leave.teacherProfile?.userId || leave.employee?.userId;
+      if (targetUserId) {
+        emitToUser(targetUserId, "notification:new", {
+          type: "GENERAL",
+          title: `Leave ${status === "APPROVED" ? "Approved ✅" : "Rejected ❌"}`,
+          body: `Your ${leave.type} leave request has been ${status.toLowerCase()}`,
+        });
+      }
 
       sendSuccess(res, updated, `Leave ${status.toLowerCase()}`);
     } catch (e) {

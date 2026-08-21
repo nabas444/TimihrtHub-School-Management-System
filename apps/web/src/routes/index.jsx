@@ -101,6 +101,15 @@ const CertificatesPage = lazy(
 const MyCertificatesPage = lazy(
   () => import("../features/certificates/MyCertificatesPage"),
 );
+const ExternalExamCheckpointsPage = lazy(
+  () => import("../features/external-exams/ExternalExamCheckpointsPage"),
+);
+const MyExternalExamRecordsPage = lazy(
+  () => import("../features/external-exams/MyExternalExamRecordsPage"),
+);
+const CeremonyEventsPage = lazy(
+  () => import("../features/ceremonies/CeremonyEventsPage"),
+);
 const AnnualPlansPage = lazy(
   () => import("../features/annual-plans/AnnualPlansPage"),
 );
@@ -123,6 +132,11 @@ const StudentTutorialsPage = lazy(
   () => import("../features/tutorials/StudentTutorialsPage"),
 );
 const StaffPage = lazy(() => import("../features/staff/StaffPage"));
+const ParentsPage = lazy(() => import("../features/parents/ParentsPage"));
+const EmployeesPage = lazy(() => import("../features/hr/EmployeesPage"));
+const HRDashboardPage = lazy(() => import("../features/hr/HRDashboardPage"));
+const RecruitingPage = lazy(() => import("../features/recruiting/RecruitingPage"));
+const PublicJobBoardPage = lazy(() => import("../features/recruiting/PublicJobBoardPage"));
 const LeavePage = lazy(() => import("../features/staff/LeavePage"));
 const AIInsightsPage = lazy(() => import("../features/ai/AIInsightsPage"));
 const ProfilePage = lazy(() => import("../features/settings/ProfilePage"));
@@ -138,6 +152,7 @@ const UnauthorizedPage = lazy(() =>
     default: m.UnauthorizedPage,
   })),
 );
+const ErrorBoundaryPage = lazy(() => import("../pages/ErrorBoundaryPage"));
 
 function AttendanceRedirect() {
   const { user } = useAuthStore();
@@ -208,6 +223,22 @@ export const router = createBrowserRouter([
     ),
   },
   {
+    path: "/jobs/public",
+    element: (
+      <S>
+        <PublicJobBoardPage />
+      </S>
+    ),
+  },
+  {
+    path: "/jobs/public/:schoolSlug",
+    element: (
+      <S>
+        <PublicJobBoardPage />
+      </S>
+    ),
+  },
+  {
     element: <AuthLayout />,
     children: [
       {
@@ -249,6 +280,11 @@ export const router = createBrowserRouter([
       <ProtectedRoute>
         <AppLayout />
       </ProtectedRoute>
+    ),
+    errorElement: (
+      <S>
+        <ErrorBoundaryPage />
+      </S>
     ),
     children: [
       {
@@ -582,6 +618,34 @@ export const router = createBrowserRouter([
         ),
       },
       {
+        path: "/external-exams",
+        element: (
+          <S>
+            <StaffRoute>
+              <ExternalExamCheckpointsPage />
+            </StaffRoute>
+          </S>
+        ),
+      },
+      {
+        path: "/external-exams/mine",
+        element: (
+          <S>
+            <MyExternalExamRecordsPage />
+          </S>
+        ),
+      },
+      {
+        path: "/ceremonies",
+        element: (
+          <S>
+            <StaffRoute>
+              <CeremonyEventsPage />
+            </StaffRoute>
+          </S>
+        ),
+      },
+      {
         path: "/annual-plans",
         element: (
           <S>
@@ -634,6 +698,46 @@ export const router = createBrowserRouter([
         element: (
           <S>
             <TutorialsRedirect />
+          </S>
+        ),
+      },
+      {
+        path: "/parents",
+        element: (
+          <S>
+            <AdminRoute>
+              <ParentsPage />
+            </AdminRoute>
+          </S>
+        ),
+      },
+      {
+        path: "/employees",
+        element: (
+          <S>
+            <AdminRoute>
+              <EmployeesPage />
+            </AdminRoute>
+          </S>
+        ),
+      },
+      {
+        path: "/hr-dashboard",
+        element: (
+          <S>
+            <AdminRoute>
+              <HRDashboardPage />
+            </AdminRoute>
+          </S>
+        ),
+      },
+      {
+        path: "/recruiting",
+        element: (
+          <S>
+            <AdminRoute>
+              <RecruitingPage />
+            </AdminRoute>
           </S>
         ),
       },

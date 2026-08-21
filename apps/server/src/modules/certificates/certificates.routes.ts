@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { z } from "zod";
-import { Role, CertificateType, CertificateRecipientType, StudentStatus, BehaviourType } from "@prisma/client";
+import { Role, CertificateType, CertificateRecipientType, StudentStatus, BehaviourType, MilestoneType } from "@prisma/client";
 import { db } from "../../config/database";
 import { AppError } from "../../middleware/errorHandler";
 import { sendSuccess } from "../../utils/response";
@@ -198,11 +198,20 @@ router.get(
               avatar: true,
             },
           },
-          class: { select: { id: true, name: true } },
-          gradeLevel: { select: { id: true, name: true } },
+          class: {
+            include: {
+              gradeLevel: true,
+            },
+          },
+          gradeLevel: true,
           academicYearSummaries: academicYear
             ? { where: { academicYear }, take: 1 }
             : { orderBy: { generatedAt: "desc" }, take: 1 },
+          externalExamRecords: {
+            include: {
+              checkpoint: true,
+            },
+          },
         },
       });
 
@@ -219,6 +228,26 @@ router.get(
         commendationCounts.map((c) => [c.studentId, c._count.id]),
       );
 
+      // Fetch external exam checkpoints if previewing graduation certificates
+      const relevantGradeLevelIds = Array.from(
+        new Set(
+          students
+            .map((s) => s.gradeLevelId || s.class?.gradeLevelId)
+            .filter(Boolean) as string[],
+        ),
+      );
+
+      const checkpoints =
+        type === CertificateType.GRADUATION && relevantGradeLevelIds.length > 0
+          ? await db.externalExamCheckpoint.findMany({
+              where: {
+                schoolId,
+                gradeLevelId: { in: relevantGradeLevelIds },
+                ...(academicYear ? { academicYear } : {}),
+              },
+            })
+          : [];
+
       const mappedRecipients = students.map((s) => {
         const summary = s.academicYearSummaries[0] || null;
         const name = [s.user.firstName, s.user.middleName, s.user.lastName]
@@ -232,6 +261,8 @@ router.get(
           const isArchivedOrGraduated =
             s.status === StudentStatus.ARCHIVE || s.graduatedAt != null;
           const isPassing = summary?.isPassing === true;
+          const effectiveGrade = s.gradeLevel || s.class?.gradeLevel;
+          const targetYear = academicYear || summary?.academicYear;
 
           if (!isArchivedOrGraduated) {
             isEligible = false;
@@ -242,6 +273,25 @@ router.get(
           } else if (!isPassing) {
             isEligible = false;
             eligibilityReason = `Academic average (${summary.overallAverage ?? 0}%) does not meet passing threshold`;
+          } else if (
+            effectiveGrade &&
+            effectiveGrade.milestoneType === MilestoneType.EXTERNAL_EXAM
+          ) {
+            const cp = checkpoints.find(
+              (c) =>
+                c.gradeLevelId === effectiveGrade.id &&
+                (!targetYear || c.academicYear === targetYear),
+            );
+
+            if (cp) {
+              const examRecord = (s.externalExamRecords || []).find(
+                (r) => r.checkpointId === cp.id,
+              );
+              if (!examRecord || examRecord.isPassing !== true) {
+                isEligible = false;
+                eligibilityReason = `External exam (${cp.name}) not yet passed or recorded`;
+              }
+            }
           }
         }
 
@@ -314,6 +364,8 @@ router.post(
           where: { id: data.studentProfileId, user: { schoolId } },
           include: {
             user: true,
+            class: { include: { gradeLevel: true } },
+            gradeLevel: true,
             academicYearSummaries: data.academicYear
               ? { where: { academicYear: data.academicYear }, take: 1 }
               : { orderBy: { generatedAt: "desc" }, take: 1 },
@@ -337,6 +389,37 @@ router.post(
             `Student is not eligible for a graduation certificate: Passing academic year summary for ${data.academicYear || "the academic year"} is required.`,
             400,
           );
+        }
+
+        // External Exam Checkpoint check
+        const effectiveGrade = student.gradeLevel || student.class?.gradeLevel;
+        const targetYear = data.academicYear || summary.academicYear;
+        if (effectiveGrade && effectiveGrade.milestoneType === MilestoneType.EXTERNAL_EXAM) {
+          const checkpoint = await db.externalExamCheckpoint.findFirst({
+            where: {
+              schoolId,
+              gradeLevelId: effectiveGrade.id,
+              academicYear: targetYear,
+            },
+          });
+
+          if (checkpoint) {
+            const examRecord = await db.externalExamRecord.findUnique({
+              where: {
+                checkpointId_studentProfileId: {
+                  checkpointId: checkpoint.id,
+                  studentProfileId: student.id,
+                },
+              },
+            });
+
+            if (!examRecord || examRecord.isPassing !== true) {
+              throw new AppError(
+                `Student is not eligible for a graduation certificate: External exam (${checkpoint.name}) result is not yet recorded or not passing.`,
+                400,
+              );
+            }
+          }
         }
       } else {
         // Recognition certificate
@@ -495,9 +578,14 @@ router.post(
           where: studentWhere,
           include: {
             user: true,
+            class: { include: { gradeLevel: true } },
+            gradeLevel: true,
             academicYearSummaries: data.academicYear
               ? { where: { academicYear: data.academicYear }, take: 1 }
               : { orderBy: { generatedAt: "desc" }, take: 1 },
+            externalExamRecords: {
+              include: { checkpoint: true },
+            },
           },
         });
 
@@ -514,6 +602,8 @@ router.post(
             const isArchived =
               student.status === StudentStatus.ARCHIVE || student.graduatedAt != null;
             const summary = student.academicYearSummaries[0];
+            const effectiveGrade = student.gradeLevel || student.class?.gradeLevel;
+            const targetYear = data.academicYear || summary?.academicYear;
 
             if (!isArchived) {
               skippedDetails.push({
@@ -531,6 +621,31 @@ router.post(
                 reason: "No passing academic year summary found for this academic year",
               });
               continue;
+            }
+
+            // External Exam Milestone check
+            if (effectiveGrade && effectiveGrade.milestoneType === MilestoneType.EXTERNAL_EXAM) {
+              const checkpoint = await db.externalExamCheckpoint.findFirst({
+                where: {
+                  schoolId,
+                  gradeLevelId: effectiveGrade.id,
+                  academicYear: targetYear,
+                },
+              });
+
+              if (checkpoint) {
+                const examRecord = (student.externalExamRecords || []).find(
+                  (r) => r.checkpointId === checkpoint.id,
+                );
+                if (!examRecord || examRecord.isPassing !== true) {
+                  skippedDetails.push({
+                    id: student.id,
+                    name: studentName,
+                    reason: `External exam (${checkpoint.name}) result is not yet recorded or not passing`,
+                  });
+                  continue;
+                }
+              }
             }
           }
 

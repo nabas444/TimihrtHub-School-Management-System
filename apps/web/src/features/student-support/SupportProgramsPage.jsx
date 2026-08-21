@@ -270,10 +270,15 @@ export default function SupportProgramsPage() {
           icon={HeartHandshake}
           title="No support programs found"
           description="Create scholarships, financial aid, or meal programs to support students."
-          action={{
-            label: "Create First Program",
-            onClick: handleOpenCreate,
-          }}
+          action={
+            <button
+              type="button"
+              className="btn-primary btn-sm"
+              onClick={handleOpenCreate}
+            >
+              Create First Program
+            </button>
+          }
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">

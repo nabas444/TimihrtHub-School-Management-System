@@ -484,10 +484,15 @@ export default function SupportEnrollmentsPage() {
               icon={Users}
               title="No student enrollments found"
               description="Enroll students individually or via bulk selection into support programs."
-              action={{
-                label: "Enroll Student",
-                onClick: () => setIsSingleEnrollOpen(true),
-              }}
+              action={
+                <button
+                  type="button"
+                  className="btn-primary btn-sm"
+                  onClick={() => setIsSingleEnrollOpen(true)}
+                >
+                  Enroll Student
+                </button>
+              }
             />
           ) : (
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
@@ -771,10 +776,15 @@ export default function SupportEnrollmentsPage() {
               icon={Utensils}
               title="No active students enrolled in meal support"
               description="Enroll students into a meal assistance program to begin tracking daily distributions."
-              action={{
-                label: "Enroll in Meal Support",
-                onClick: () => setIsSingleEnrollOpen(true),
-              }}
+              action={
+                <button
+                  type="button"
+                  className="btn-primary btn-sm"
+                  onClick={() => setIsSingleEnrollOpen(true)}
+                >
+                  Enroll in Meal Support
+                </button>
+              }
             />
           ) : (
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">

@@ -43,6 +43,11 @@ import certificateRoutes from "./modules/certificates/certificates.routes";
 import annualPlanRoutes from "./modules/annual-plans/annual-plans.routes";
 import studentSupportRoutes from "./modules/student-support/student-support.routes";
 import tutorialRoutes from "./modules/tutorials/tutorials.routes";
+import externalExamRoutes from "./modules/external-exams/external-exams.routes";
+import ceremonyRoutes from "./modules/ceremonies/ceremonies.routes";
+import employeeRoutes from "./modules/employees/employees.routes";
+import { protectedRecruitingRouter as recruitingRoutes, publicRecruitingRouter } from "./modules/recruiting/recruiting.routes";
+import parentRoutes from "./modules/parents/parents.routes";
 
 // ── Background job workers ───────────────────────────────────────────────────
 // Importing these starts their BullMQ Worker instances (side effect on import).
@@ -127,6 +132,7 @@ app.get("/", (_, res) => {
 // ── API Routes ───────────────────────────────────────────────────────────────
 // Public (no auth required)
 app.use("/api/v1/auth", authRoutes);
+app.use("/api/v1/recruiting/public", publicRecruitingRouter);
 
 // Protected (auth + tenant guard applied globally)
 app.use("/api/v1", authenticate, tenantGuard);
@@ -146,6 +152,9 @@ app.use("/api/v1/ai", aiRoutes);
 app.use("/api/v1/notifications", notificationRoutes);
 app.use("/api/v1/library", libraryRoutes);
 app.use("/api/v1/staff", staffRoutes);
+app.use("/api/v1/employees", employeeRoutes);
+app.use("/api/v1/recruiting", recruitingRoutes);
+app.use("/api/v1/parents", parentRoutes);
 app.use("/api/v1/files", fileRoutes);
 app.use("/api/v1/billing", billingRoutes);
 app.use("/api/v1/deadlines", deadlineRoutes);
@@ -158,6 +167,12 @@ app.use("/api/v1/certificates", certificateRoutes);
 app.use("/api/v1/annual-plans", annualPlanRoutes);
 app.use("/api/v1/student-support", studentSupportRoutes);
 app.use("/api/v1/tutorial-sessions", tutorialRoutes);
+app.use("/api/v1/external-exams", externalExamRoutes);
+app.use("/api/v1/external-exam-checkpoints", externalExamRoutes);
+app.use("/api/v1/external-exam-records", externalExamRoutes);
+app.use("/api/v1/ceremonies", ceremonyRoutes);
+app.use("/api/v1/ceremony-events", ceremonyRoutes);
+app.use("/api/v1/ceremony-participants", ceremonyRoutes);
 
 // ── 404 + Error handlers ─────────────────────────────────────────────────────
 app.use(notFoundHandler);
