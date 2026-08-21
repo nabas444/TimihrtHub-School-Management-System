@@ -225,6 +225,51 @@ router.get(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
+// UNLINKED USERS (FOR ATTACHING EXISTING USERS TO EMPLOYEES)
+// ─────────────────────────────────────────────────────────────────────────────
+
+router.get(
+  "/unlinked-users",
+  adminGuard,
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const schoolId = req.user.schoolId;
+      const search = req.query.search as string | undefined;
+
+      const unlinkedUsers = await db.user.findMany({
+        where: {
+          schoolId,
+          role: { in: [Role.TEACHER, Role.ADMIN, Role.FINANCE, Role.SUPER_ADMIN] },
+          isActive: true,
+          employeeProfile: null,
+          ...(search && {
+            OR: [
+              { firstName: { contains: search, mode: "insensitive" } },
+              { lastName: { contains: search, mode: "insensitive" } },
+              { email: { contains: search, mode: "insensitive" } },
+            ],
+          }),
+        },
+        select: {
+          id: true,
+          firstName: true,
+          middleName: true,
+          lastName: true,
+          email: true,
+          role: true,
+          avatar: true,
+        },
+        orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+      });
+
+      return sendSuccess(res, unlinkedUsers);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
 // EMPLOYEE DIRECTORY & LIST
 // ─────────────────────────────────────────────────────────────────────────────
 

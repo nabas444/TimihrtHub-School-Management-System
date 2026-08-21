@@ -31,6 +31,8 @@ import {
   Eye,
   Check,
   X,
+  Link as LinkIcon,
+  Unlink,
 } from "lucide-react";
 import api from "../../lib/api";
 import {
@@ -92,6 +94,9 @@ export default function EmployeesPage() {
   // Sub-modals for active employee actions
   const [addDocModalOpen, setAddDocModalOpen] = useState(false);
   const [createUserModalOpen, setCreateUserModalOpen] = useState(false);
+  const [linkUserModalOpen, setLinkUserModalOpen] = useState(false);
+  const [selectedUserToLink, setSelectedUserToLink] = useState("");
+  const [unlinkedSearch, setUnlinkedSearch] = useState("");
   const [addReviewModalOpen, setAddReviewModalOpen] = useState(false);
   const [addTrainingModalOpen, setAddTrainingModalOpen] = useState(false);
   const [addDisciplinaryModalOpen, setAddDisciplinaryModalOpen] = useState(false);
@@ -195,6 +200,20 @@ export default function EmployeesPage() {
     queryFn: () => api.get("/lookup-values?type=POSITION").then((r) => r.data.data || []),
   });
 
+  // Fetch Unlinked Users for linking modal
+  const { data: unlinkedUsers, isLoading: isUnlinkedLoading } = useQuery({
+    queryKey: ["unlinked-users", unlinkedSearch],
+    queryFn: () =>
+      api
+        .get(
+          `/employees/unlinked-users${
+            unlinkedSearch ? `?search=${encodeURIComponent(unlinkedSearch)}` : ""
+          }`
+        )
+        .then((r) => r.data.data || []),
+    enabled: linkUserModalOpen,
+  });
+
   // ── Mutations ──────────────────────────────────────────────────────
   const createEmployeeMutation = useMutation({
     mutationFn: (newEmp) => api.post("/employees", newEmp),
@@ -220,6 +239,34 @@ export default function EmployeesPage() {
     },
     onError: (err) => {
       toast.error(err.response?.data?.message || "Failed to create user account");
+    },
+  });
+
+  const linkUserMutation = useMutation({
+    mutationFn: ({ empId, userId }) => api.post(`/employees/${empId}/link-user`, { userId }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["employee-detail", selectedEmployeeId] });
+      qc.invalidateQueries({ queryKey: ["employees"] });
+      qc.invalidateQueries({ queryKey: ["unlinked-users"] });
+      toast.success("Existing user account linked to employee successfully");
+      setLinkUserModalOpen(false);
+      setSelectedUserToLink("");
+    },
+    onError: (err) => {
+      toast.error(err.response?.data?.message || "Failed to link user account");
+    },
+  });
+
+  const unlinkUserMutation = useMutation({
+    mutationFn: (empId) => api.post(`/employees/${empId}/unlink-user`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["employee-detail", selectedEmployeeId] });
+      qc.invalidateQueries({ queryKey: ["employees"] });
+      qc.invalidateQueries({ queryKey: ["unlinked-users"] });
+      toast.success("User account unlinked from employee");
+    },
+    onError: (err) => {
+      toast.error(err.response?.data?.message || "Failed to unlink user account");
     },
   });
 
@@ -860,31 +907,66 @@ export default function EmployeesPage() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Badge variant={getStatusBadgeVariant(employeeDetail.status)}>
                   {employeeDetail.status}
                 </Badge>
                 {!employeeDetail.user ? (
-                  <button
-                    onClick={() => {
-                      setUserAccForm({
-                        role: "TEACHER",
-                        email: employeeDetail.email || "",
-                        password: "Welcome@123",
-                        specialization: "",
-                        qualification: "",
-                      });
-                      setCreateUserModalOpen(true);
-                    }}
-                    className="btn-secondary text-xs py-1.5 inline-flex items-center gap-1.5 border-primary-300 text-primary-700 bg-primary-50 hover:bg-primary-100"
-                  >
-                    <Key className="w-3.5 h-3.5" />
-                    Provision Portal Login
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        setSelectedUserToLink("");
+                        setUnlinkedSearch("");
+                        setLinkUserModalOpen(true);
+                      }}
+                      className="btn-secondary text-xs py-1.5 inline-flex items-center gap-1.5 border-purple-300 text-purple-700 bg-purple-50 hover:bg-purple-100 shadow-xs"
+                      title="Attach an existing school login user to this employee"
+                    >
+                      <LinkIcon className="w-3.5 h-3.5" />
+                      Link Existing Account
+                    </button>
+                    <button
+                      onClick={() => {
+                        setUserAccForm({
+                          role: "TEACHER",
+                          email: employeeDetail.email || "",
+                          password: "Welcome@123",
+                          specialization: "",
+                          qualification: "",
+                        });
+                        setCreateUserModalOpen(true);
+                      }}
+                      className="btn-secondary text-xs py-1.5 inline-flex items-center gap-1.5 border-primary-300 text-primary-700 bg-primary-50 hover:bg-primary-100 shadow-xs"
+                      title="Create a new login user account for this employee"
+                    >
+                      <Key className="w-3.5 h-3.5" />
+                      Provision Portal Login
+                    </button>
+                  </div>
                 ) : (
-                  <span className="text-[11px] text-emerald-700 font-bold bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg">
-                    Portal Active ({employeeDetail.user.role})
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-emerald-700 font-bold bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg flex items-center gap-1.5">
+                      <Key className="w-3 h-3 text-emerald-600" />
+                      Portal Active ({employeeDetail.user.role})
+                    </span>
+                    <button
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            `Are you sure you want to unlink portal user account (${employeeDetail.user?.email}) from this employee record?`
+                          )
+                        ) {
+                          unlinkUserMutation.mutate(employeeDetail.id);
+                        }
+                      }}
+                      className="btn-ghost p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg text-xs font-semibold inline-flex items-center gap-1"
+                      title="Unlink Portal Account"
+                      disabled={unlinkUserMutation.isPending}
+                    >
+                      <Unlink className="w-3.5 h-3.5" />
+                      {unlinkUserMutation.isPending ? "Unlinking…" : "Unlink"}
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
@@ -1263,6 +1345,113 @@ export default function EmployeesPage() {
               onChange={(e) => setUserAccForm({ ...userAccForm, password: e.target.value })}
             />
           </div>
+        </div>
+      </Modal>
+
+      {/* ── LINK EXISTING USER ACCOUNT MODAL ────────────────────────────── */}
+      <Modal
+        open={linkUserModalOpen}
+        onClose={() => setLinkUserModalOpen(false)}
+        title={
+          employeeDetail
+            ? `Link Existing Account — ${employeeDetail.firstName} ${employeeDetail.lastName}`
+            : "Link Existing User Account"
+        }
+        size="md"
+        footer={
+          <div className="flex justify-end gap-2 w-full">
+            <button className="btn-secondary text-xs" onClick={() => setLinkUserModalOpen(false)}>
+              Cancel
+            </button>
+            <button
+              className="btn-primary text-xs inline-flex items-center gap-1.5"
+              onClick={() =>
+                linkUserMutation.mutate({
+                  empId: employeeDetail?.id,
+                  userId: selectedUserToLink,
+                })
+              }
+              disabled={linkUserMutation.isPending || !selectedUserToLink}
+            >
+              <LinkIcon className="w-3.5 h-3.5" />
+              {linkUserMutation.isPending ? "Linking Account…" : "Link Account to Employee"}
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-4 text-xs">
+          <p className="text-gray-600">
+            Select an existing login user account in your school (e.g. created prior to the HR module) to attach to this employee record.
+          </p>
+
+          <SearchInput
+            value={unlinkedSearch}
+            onChange={setUnlinkedSearch}
+            placeholder="Filter unlinked users by name or email…"
+          />
+
+          {isUnlinkedLoading ? (
+            <PageLoader />
+          ) : unlinkedUsers?.length === 0 ? (
+            <div className="p-6 text-center bg-gray-50 rounded-xl border border-dashed border-gray-200">
+              <Users className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+              <p className="font-bold text-gray-700">No Unlinked Users Available</p>
+              <p className="text-gray-400 text-[11px] mt-0.5">
+                All existing staff user accounts are already linked to employee records, or none matched your filter.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+              {unlinkedUsers?.map((u) => {
+                const uName = `${u.firstName} ${u.middleName ? u.middleName + " " : ""}${u.lastName}`;
+                const isSelected = selectedUserToLink === u.id;
+
+                return (
+                  <div
+                    key={u.id}
+                    onClick={() => setSelectedUserToLink(u.id)}
+                    className={clsx(
+                      "p-3 rounded-xl border flex items-center justify-between cursor-pointer transition-all",
+                      isSelected
+                        ? "bg-purple-50/80 border-purple-400 ring-1 ring-purple-400 shadow-xs"
+                        : "bg-white border-gray-200 hover:bg-gray-50"
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Avatar
+                        src={u.avatar}
+                        name={uName}
+                        size="sm"
+                        className="bg-purple-100 text-purple-700 font-bold border border-purple-200"
+                      />
+                      <div>
+                        <p className="font-bold text-gray-900">{uName}</p>
+                        <p className="text-[11px] text-gray-500 flex items-center gap-1 mt-0.5">
+                          <Mail className="w-3 h-3 text-gray-400" /> {u.email}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="bg-gray-100 text-gray-700 px-2 py-0.5 rounded text-[10px] font-bold">
+                        {u.role}
+                      </span>
+                      <div
+                        className={clsx(
+                          "w-4 h-4 rounded-full border flex items-center justify-center",
+                          isSelected
+                            ? "border-purple-600 bg-purple-600 text-white"
+                            : "border-gray-300 bg-white"
+                        )}
+                      >
+                        {isSelected && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </Modal>
 
