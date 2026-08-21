@@ -8,6 +8,8 @@ import {
   ItemLifecycleStatus,
   InventoryLocationType,
   DepreciationMethod,
+  CustodianType,
+  AllocationStatus,
 } from "@prisma/client";
 import { db } from "../../config/database";
 import { AppError } from "../../middleware/errorHandler";
@@ -1115,3 +1117,795 @@ export async function deleteInventoryItem(schoolId: string, id: string, req?: Re
 
   return { id, deleted: true };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 6. INVENTORY ALLOCATIONS (ISSUE / RETURN / TRANSFER)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface IssueAllocationDTO {
+  itemId: string;
+  quantity?: number;
+  requestId?: string | null;
+  custodianType: CustodianType;
+  custodianUserId?: string | null;
+  custodianRoomId?: string | null;
+  custodianLabel?: string | null;
+  dueBackAt?: string | Date | null;
+  conditionAtIssue?: ItemCondition;
+  notes?: string | null;
+}
+
+export async function issueAllocation(
+  schoolId: string,
+  data: IssueAllocationDTO,
+  issuedById: string,
+  req?: Request,
+) {
+  const item = await db.inventoryItem.findFirst({
+    where: { id: data.itemId, schoolId, isActive: true },
+    include: {
+      allocations: { where: { status: "ACTIVE" } },
+    },
+  });
+
+  if (!item) throw new AppError("Inventory item not found or is inactive", 404);
+
+  // Business Rule: Disposed / lost items cannot be allocated
+  if (item.status === ItemLifecycleStatus.DISPOSED || item.status === ItemLifecycleStatus.LOST) {
+    throw new AppError(`Cannot allocate item with status '${item.status}'`, 400);
+  }
+
+  // Business Rule: Validate Fixed Asset allocation constraints
+  if (item.itemType === ItemType.FIXED_ASSET) {
+    if (item.status !== ItemLifecycleStatus.IN_STOCK) {
+      throw new AppError(
+        `Fixed asset '${item.name}' cannot be allocated because it is currently ${item.status}`,
+        400,
+      );
+    }
+    if (item.allocations.length > 0) {
+      throw new AppError(`Fixed asset '${item.name}' already has an active allocation`, 400);
+    }
+  }
+
+  // Business Rule: Validate Consumable quantityOnHand constraints
+  const issueQty = item.itemType === ItemType.FIXED_ASSET ? 1 : Math.max(1, data.quantity || 1);
+  if (item.itemType === ItemType.CONSUMABLE) {
+    const currentStock = item.quantityOnHand ?? 0;
+    if (issueQty > currentStock) {
+      throw new AppError(
+        `Insufficient stock for '${item.name}'. Available: ${currentStock}, Requested: ${issueQty}`,
+        400,
+      );
+    }
+  }
+
+  // Validate Custodian Details
+  if (data.custodianType === CustodianType.STAFF || data.custodianType === CustodianType.STUDENT) {
+    if (!data.custodianUserId) {
+      throw new AppError("Custodian user ID is required for STAFF or STUDENT custodians", 400);
+    }
+    const user = await db.user.findFirst({
+      where: { id: data.custodianUserId, schoolId, isActive: true },
+    });
+    if (!user) throw new AppError("Custodian user account not found", 400);
+  } else if (data.custodianType === CustodianType.ROOM) {
+    if (!data.custodianRoomId) {
+      throw new AppError("Custodian room ID is required for ROOM custodian type", 400);
+    }
+    const room = await db.inventoryLocation.findFirst({
+      where: { id: data.custodianRoomId, schoolId, isActive: true },
+    });
+    if (!room) throw new AppError("Custodian room location not found", 400);
+  }
+
+  // Execute Allocation and Ledger update in a single atomic transaction
+  const result = await db.$transaction(async (tx) => {
+    // 1. Create Allocation Record
+    const allocation = await tx.inventoryAllocation.create({
+      data: {
+        schoolId,
+        itemId: item.id,
+        quantity: issueQty,
+        requestId: data.requestId || null,
+        custodianType: data.custodianType,
+        custodianUserId: data.custodianUserId || null,
+        custodianRoomId: data.custodianRoomId || null,
+        custodianLabel: data.custodianLabel?.trim() || null,
+        issuedById,
+        dueBackAt: data.dueBackAt ? new Date(data.dueBackAt) : null,
+        conditionAtIssue: data.conditionAtIssue || item.condition || ItemCondition.GOOD,
+        status: "ACTIVE",
+        notes: data.notes?.trim() || null,
+      },
+      include: {
+        item: true,
+        custodianUser: { select: { id: true, firstName: true, lastName: true, email: true } },
+        custodianRoom: { select: { id: true, name: true } },
+        issuedBy: { select: { id: true, firstName: true, lastName: true } },
+      },
+    });
+
+    // 2. Update Item Status / Location / Stock
+    let newStock = item.quantityOnHand;
+    let newStatus = item.status;
+    let newLocationId = item.currentLocationId;
+
+    if (item.itemType === ItemType.FIXED_ASSET) {
+      newStatus = ItemLifecycleStatus.ALLOCATED;
+      if (data.custodianType === CustodianType.ROOM && data.custodianRoomId) {
+        newLocationId = data.custodianRoomId;
+      }
+    } else {
+      newStock = Math.max(0, (item.quantityOnHand ?? 0) - issueQty);
+    }
+
+    await tx.inventoryItem.update({
+      where: { id: item.id },
+      data: {
+        status: newStatus,
+        quantityOnHand: newStock,
+        currentLocationId: newLocationId,
+      },
+    });
+
+    // 3. Record Immutable Ledger Movement
+    await recordMovement(
+      tx,
+      {
+        schoolId,
+        itemId: item.id,
+        type: MovementType.ALLOCATED,
+        quantity: issueQty,
+        fromLocationId: item.currentLocationId,
+        toLocationId: newLocationId,
+        performedById: issuedById,
+        relatedAllocationId: allocation.id,
+        note: data.notes || `Allocated to ${data.custodianType}: ${data.custodianLabel || data.custodianUserId || data.custodianRoomId}`,
+      },
+      req,
+    );
+
+    // 4. Low-stock trigger check
+    if (
+      item.itemType === ItemType.CONSUMABLE &&
+      item.reorderPoint !== null &&
+      newStock !== null &&
+      newStock <= item.reorderPoint
+    ) {
+      // Create notification for school administrators
+      const admins = await tx.user.findMany({
+        where: { schoolId, role: { in: ["ADMIN", "SUPER_ADMIN", "FINANCE"] }, isActive: true },
+        select: { id: true },
+        take: 10,
+      });
+
+      for (const adm of admins) {
+        await tx.notification.create({
+          data: {
+            schoolId,
+            userId: adm.id,
+            type: "INVENTORY",
+            title: `Low Stock Alert: ${item.name}`,
+            body: `Stock for '${item.name}' is now ${newStock} ${item.unit} (reorder point: ${item.reorderPoint}).`,
+            data: { itemId: item.id, quantityOnHand: newStock, reorderPoint: item.reorderPoint },
+          },
+        });
+      }
+    }
+
+    return allocation;
+  });
+
+  return result;
+}
+
+export interface ReturnAllocationDTO {
+  conditionAtReturn: ItemCondition;
+  returnLocationId?: string | null;
+  quantityReturned?: number;
+  notes?: string | null;
+}
+
+export async function returnAllocation(
+  schoolId: string,
+  allocationId: string,
+  data: ReturnAllocationDTO,
+  performedById: string,
+  req?: Request,
+) {
+  const allocation = await db.inventoryAllocation.findFirst({
+    where: { id: allocationId, schoolId },
+    include: { item: true },
+  });
+
+  if (!allocation) throw new AppError("Allocation record not found", 404);
+  if (allocation.status !== "ACTIVE" && allocation.status !== "OVERDUE") {
+    throw new AppError(`Cannot return an allocation that is already ${allocation.status}`, 400);
+  }
+
+  const item = allocation.item;
+  const isDamaged =
+    data.conditionAtReturn === ItemCondition.DAMAGED ||
+    data.conditionAtReturn === ItemCondition.CONDEMNED;
+
+  const result = await db.$transaction(async (tx) => {
+    // 1. Update Allocation Status
+    const updatedAllocation = await tx.inventoryAllocation.update({
+      where: { id: allocationId },
+      data: {
+        status: isDamaged ? "DAMAGED" : "RETURNED",
+        conditionAtReturn: data.conditionAtReturn,
+        returnedAt: new Date(),
+        notes: data.notes
+          ? `${allocation.notes ? allocation.notes + "\n" : ""}${data.notes}`
+          : allocation.notes,
+      },
+      include: {
+        item: true,
+        custodianUser: { select: { id: true, firstName: true, lastName: true } },
+      },
+    });
+
+    let maintenanceRecordId: string | null = null;
+
+    // 2. Business Rule: Damaged Return automatically opens a MaintenanceRecord
+    if (isDamaged) {
+      const maint = await tx.maintenanceRecord.create({
+        data: {
+          schoolId,
+          itemId: item.id,
+          reportedById: performedById,
+          faultDescription:
+            data.notes ||
+            `Item returned in ${data.conditionAtReturn} condition from allocation #${allocation.id.substring(0, 8)}`,
+          status: "REPORTED",
+        },
+      });
+      maintenanceRecordId = maint.id;
+
+      // Update Item to UNDER_MAINTENANCE or CONDEMNED
+      await tx.inventoryItem.update({
+        where: { id: item.id },
+        data: {
+          status:
+            data.conditionAtReturn === ItemCondition.CONDEMNED
+              ? ItemLifecycleStatus.DISPOSED
+              : ItemLifecycleStatus.UNDER_MAINTENANCE,
+          condition: data.conditionAtReturn,
+          ...(data.returnLocationId && { currentLocationId: data.returnLocationId }),
+        },
+      });
+
+      // Record DAMAGED Movement
+      await recordMovement(
+        tx,
+        {
+          schoolId,
+          itemId: item.id,
+          type: MovementType.DAMAGED,
+          quantity: allocation.quantity,
+          fromLocationId: item.currentLocationId,
+          toLocationId: data.returnLocationId || item.currentLocationId,
+          performedById,
+          relatedAllocationId: allocation.id,
+          relatedMaintenanceId: maintenanceRecordId,
+          note: `Returned damaged: ${data.notes || "Auto-flagged maintenance"}`,
+        },
+        req,
+      );
+    } else {
+      // Clean return
+      let newStock = item.quantityOnHand;
+      if (item.itemType === ItemType.CONSUMABLE) {
+        const qtyReturned = data.quantityReturned ?? allocation.quantity;
+        newStock = (item.quantityOnHand ?? 0) + qtyReturned;
+      }
+
+      await tx.inventoryItem.update({
+        where: { id: item.id },
+        data: {
+          status: ItemLifecycleStatus.IN_STOCK,
+          condition: data.conditionAtReturn,
+          quantityOnHand: newStock,
+          ...(data.returnLocationId && { currentLocationId: data.returnLocationId }),
+        },
+      });
+
+      // Record RETURNED Movement
+      await recordMovement(
+        tx,
+        {
+          schoolId,
+          itemId: item.id,
+          type: MovementType.RETURNED,
+          quantity: allocation.quantity,
+          fromLocationId: item.currentLocationId,
+          toLocationId: data.returnLocationId || item.currentLocationId,
+          performedById,
+          relatedAllocationId: allocation.id,
+          note: data.notes || `Returned in ${data.conditionAtReturn} condition`,
+        },
+        req,
+      );
+    }
+
+    return { allocation: updatedAllocation, maintenanceRecordId };
+  });
+
+  return result;
+}
+
+export interface TransferAllocationDTO {
+  newCustodianType: CustodianType;
+  newCustodianUserId?: string | null;
+  newCustodianRoomId?: string | null;
+  newCustodianLabel?: string | null;
+  newLocationId?: string | null;
+  notes?: string | null;
+}
+
+export async function transferAllocation(
+  schoolId: string,
+  allocationId: string,
+  data: TransferAllocationDTO,
+  performedById: string,
+  req?: Request,
+) {
+  const allocation = await db.inventoryAllocation.findFirst({
+    where: { id: allocationId, schoolId },
+    include: { item: true },
+  });
+
+  if (!allocation) throw new AppError("Allocation not found", 404);
+  if (allocation.status !== "ACTIVE") {
+    throw new AppError("Only active allocations can be transferred", 400);
+  }
+
+  // Validate new custodian
+  if (data.newCustodianType === CustodianType.STAFF || data.newCustodianType === CustodianType.STUDENT) {
+    if (!data.newCustodianUserId) {
+      throw new AppError("New custodian user ID is required", 400);
+    }
+    const user = await db.user.findFirst({
+      where: { id: data.newCustodianUserId, schoolId, isActive: true },
+    });
+    if (!user) throw new AppError("Target custodian user account not found", 400);
+  } else if (data.newCustodianType === CustodianType.ROOM) {
+    if (!data.newCustodianRoomId) {
+      throw new AppError("New custodian room ID is required", 400);
+    }
+    const room = await db.inventoryLocation.findFirst({
+      where: { id: data.newCustodianRoomId, schoolId, isActive: true },
+    });
+    if (!room) throw new AppError("Target room location not found", 400);
+  }
+
+  const result = await db.$transaction(async (tx) => {
+    const updatedAllocation = await tx.inventoryAllocation.update({
+      where: { id: allocationId },
+      data: {
+        custodianType: data.newCustodianType,
+        custodianUserId: data.newCustodianUserId || null,
+        custodianRoomId: data.newCustodianRoomId || null,
+        custodianLabel: data.newCustodianLabel?.trim() || null,
+        notes: data.notes
+          ? `${allocation.notes ? allocation.notes + "\n" : ""}Transfer: ${data.notes}`
+          : allocation.notes,
+      },
+      include: {
+        item: true,
+        custodianUser: { select: { id: true, firstName: true, lastName: true } },
+        custodianRoom: { select: { id: true, name: true } },
+      },
+    });
+
+    const targetLocationId =
+      data.newLocationId ||
+      (data.newCustodianType === CustodianType.ROOM ? data.newCustodianRoomId : null) ||
+      allocation.item.currentLocationId;
+
+    if (targetLocationId !== allocation.item.currentLocationId) {
+      await tx.inventoryItem.update({
+        where: { id: allocation.itemId },
+        data: { currentLocationId: targetLocationId },
+      });
+    }
+
+    await recordMovement(
+      tx,
+      {
+        schoolId,
+        itemId: allocation.itemId,
+        type: MovementType.TRANSFERRED,
+        quantity: allocation.quantity,
+        fromLocationId: allocation.item.currentLocationId,
+        toLocationId: targetLocationId,
+        performedById,
+        relatedAllocationId: allocation.id,
+        note: `Transferred to ${data.newCustodianType}: ${data.newCustodianLabel || data.newCustodianUserId || data.newCustodianRoomId}`,
+      },
+      req,
+    );
+
+    return updatedAllocation;
+  });
+
+  return result;
+}
+
+export async function getAllocations(
+  schoolId: string,
+  params?: {
+    status?: string;
+    itemId?: string;
+    custodianUserId?: string;
+    custodianType?: CustodianType;
+    search?: string;
+    page?: number;
+    limit?: number;
+  },
+) {
+  const page = Math.max(1, params?.page || 1);
+  const limit = Math.min(100, Math.max(1, params?.limit || 20));
+  const skip = (page - 1) * limit;
+
+  const where: Prisma.InventoryAllocationWhereInput = {
+    schoolId,
+    ...(params?.status && { status: params.status as any }),
+    ...(params?.itemId && { itemId: params.itemId }),
+    ...(params?.custodianUserId && { custodianUserId: params.custodianUserId }),
+    ...(params?.custodianType && { custodianType: params.custodianType }),
+    ...(params?.search && {
+      OR: [
+        { item: { name: { contains: params.search, mode: "insensitive" } } },
+        { item: { assetTagNumber: { contains: params.search, mode: "insensitive" } } },
+        { custodianLabel: { contains: params.search, mode: "insensitive" } },
+      ],
+    }),
+  };
+
+  const [allocations, total] = await Promise.all([
+    db.inventoryAllocation.findMany({
+      where,
+      skip,
+      take: limit,
+      include: {
+        item: {
+          select: {
+            id: true,
+            name: true,
+            assetTagNumber: true,
+            serialNumber: true,
+            itemType: true,
+            currentLocation: { select: { id: true, name: true } },
+          },
+        },
+        custodianUser: { select: { id: true, firstName: true, lastName: true, email: true, role: true } },
+        custodianRoom: { select: { id: true, name: true, type: true } },
+        issuedBy: { select: { id: true, firstName: true, lastName: true } },
+      },
+      orderBy: [{ issuedAt: "desc" }],
+    }),
+    db.inventoryAllocation.count({ where }),
+  ]);
+
+  return { allocations, total, page, limit, totalPages: Math.ceil(total / limit) };
+}
+
+export async function getAllocationById(schoolId: string, id: string) {
+  const allocation = await db.inventoryAllocation.findFirst({
+    where: { id, schoolId },
+    include: {
+      item: {
+        include: {
+          category: true,
+          currentLocation: true,
+        },
+      },
+      custodianUser: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, role: true } },
+      custodianRoom: { select: { id: true, name: true, type: true } },
+      issuedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+    },
+  });
+  if (!allocation) throw new AppError("Allocation record not found", 404);
+  return allocation;
+}
+
+export async function getMyAllocations(schoolId: string, userId: string) {
+  const allocations = await db.inventoryAllocation.findMany({
+    where: {
+      schoolId,
+      custodianUserId: userId,
+    },
+    include: {
+      item: {
+        select: {
+          id: true,
+          name: true,
+          itemType: true,
+          assetTagNumber: true,
+          serialNumber: true,
+          imageUrl: true,
+          currentLocation: { select: { id: true, name: true } },
+        },
+      },
+      issuedBy: { select: { id: true, firstName: true, lastName: true } },
+    },
+    orderBy: [{ status: "asc" }, { issuedAt: "desc" }],
+  });
+
+  return allocations;
+}
+
+export async function getOverdueAllocations(schoolId: string) {
+  const now = new Date();
+  const overdueAllocations = await db.inventoryAllocation.findMany({
+    where: {
+      schoolId,
+      status: "ACTIVE",
+      dueBackAt: { lt: now },
+    },
+    include: {
+      item: {
+        select: {
+          id: true,
+          name: true,
+          assetTagNumber: true,
+          serialNumber: true,
+          currentLocation: { select: { id: true, name: true } },
+        },
+      },
+      custodianUser: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
+      custodianRoom: { select: { id: true, name: true } },
+      issuedBy: { select: { id: true, firstName: true, lastName: true } },
+    },
+    orderBy: [{ dueBackAt: "asc" }],
+  });
+
+  return overdueAllocations;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 7. GOODS RECEIPTS (STOCK-IN / RECEIVING)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface GoodsReceiptLineInput {
+  poLineId?: string | null;
+  itemId?: string | null;
+  quantityReceived: number;
+  conditionOnArrival?: ItemCondition;
+  serialNumbers?: string[];
+  unitCost?: number;
+  itemName?: string;
+  categoryId?: string;
+}
+
+export interface CreateGoodsReceiptDTO {
+  poId?: string | null;
+  locationId: string;
+  notes?: string | null;
+  discrepancyNotes?: string | null;
+  lines: GoodsReceiptLineInput[];
+}
+
+export async function createGoodsReceipt(
+  schoolId: string,
+  data: CreateGoodsReceiptDTO,
+  receivedById: string,
+  req?: Request,
+) {
+  const location = await db.inventoryLocation.findFirst({
+    where: { id: data.locationId, schoolId, isActive: true },
+  });
+  if (!location) throw new AppError("Receiving store location not found", 400);
+
+  if (!data.lines || data.lines.length === 0) {
+    throw new AppError("At least one goods receipt line is required", 400);
+  }
+
+  const result = await db.$transaction(async (tx) => {
+    // 1. If PO is linked, validate PO
+    let purchaseOrder: any = null;
+    if (data.poId) {
+      purchaseOrder = await tx.purchaseOrder.findFirst({
+        where: { id: data.poId, schoolId },
+        include: { lines: true },
+      });
+      if (!purchaseOrder) throw new AppError("Linked Purchase Order not found", 404);
+    }
+
+    // 2. Create Goods Receipt Header
+    const receipt = await tx.goodsReceipt.create({
+      data: {
+        schoolId,
+        poId: data.poId || (purchaseOrder?.id ?? ""),
+        receivedById,
+        locationId: data.locationId,
+        notes: data.notes?.trim() || null,
+        discrepancyNotes: data.discrepancyNotes?.trim() || null,
+      },
+    });
+
+    // 3. Process Lines
+    for (const line of data.lines) {
+      const qty = Math.max(1, line.quantityReceived);
+
+      if (line.itemId) {
+        const item = await tx.inventoryItem.findFirst({
+          where: { id: line.itemId, schoolId },
+        });
+
+        if (item) {
+          if (item.itemType === ItemType.CONSUMABLE) {
+            // Increment consumable stock
+            await tx.inventoryItem.update({
+              where: { id: item.id },
+              data: {
+                quantityOnHand: (item.quantityOnHand ?? 0) + qty,
+                currentLocationId: data.locationId,
+                ...(line.unitCost && { unitCost: line.unitCost }),
+              },
+            });
+
+            // Write Movement
+            await recordMovement(
+              tx,
+              {
+                schoolId,
+                itemId: item.id,
+                type: MovementType.RECEIVED,
+                quantity: qty,
+                toLocationId: data.locationId,
+                performedById: receivedById,
+                note: `Goods receipt #${receipt.id.substring(0, 8)}: ${data.notes || "Stock-in"}`,
+              },
+              req,
+            );
+          } else {
+            // Fixed Asset
+            await tx.inventoryItem.update({
+              where: { id: item.id },
+              data: {
+                status: ItemLifecycleStatus.IN_STOCK,
+                condition: line.conditionOnArrival || ItemCondition.NEW,
+                currentLocationId: data.locationId,
+              },
+            });
+
+            await recordMovement(
+              tx,
+              {
+                schoolId,
+                itemId: item.id,
+                type: MovementType.RECEIVED,
+                quantity: 1,
+                toLocationId: data.locationId,
+                performedById: receivedById,
+                note: `Goods receipt #${receipt.id.substring(0, 8)}`,
+              },
+              req,
+            );
+          }
+        }
+      }
+
+      // If poLineId exists, update PO Line quantityReceived
+      if (line.poLineId) {
+        await tx.purchaseOrderLine.update({
+          where: { id: line.poLineId },
+          data: { quantityReceived: { increment: qty } },
+        });
+
+        await tx.goodsReceiptLine.create({
+          data: {
+            receiptId: receipt.id,
+            poLineId: line.poLineId,
+            quantityReceived: qty,
+            conditionOnArrival: line.conditionOnArrival || ItemCondition.NEW,
+            serialNumbers: line.serialNumbers || [],
+          },
+        });
+      }
+    }
+
+    // 4. Update PO status if linked
+    if (purchaseOrder) {
+      const refreshedPo = await tx.purchaseOrder.findUnique({
+        where: { id: purchaseOrder.id },
+        include: { lines: true },
+      });
+      const allReceived = refreshedPo?.lines.every((l) => l.quantityReceived >= l.quantityOrdered);
+      const anyReceived = refreshedPo?.lines.some((l) => l.quantityReceived > 0);
+
+      await tx.purchaseOrder.update({
+        where: { id: purchaseOrder.id },
+        data: {
+          status: allReceived
+            ? "RECEIVED"
+            : anyReceived
+            ? "PARTIALLY_RECEIVED"
+            : purchaseOrder.status,
+        },
+      });
+    }
+
+    return receipt;
+  });
+
+  return result;
+}
+
+export async function getGoodsReceipts(
+  schoolId: string,
+  params?: { page?: number; limit?: number },
+) {
+  const page = Math.max(1, params?.page || 1);
+  const limit = Math.min(100, Math.max(1, params?.limit || 20));
+  const skip = (page - 1) * limit;
+
+  const [receipts, total] = await Promise.all([
+    db.goodsReceipt.findMany({
+      where: { schoolId },
+      skip,
+      take: limit,
+      include: {
+        location: { select: { id: true, name: true } },
+        receivedBy: { select: { id: true, firstName: true, lastName: true } },
+        po: { select: { id: true, poNumber: true } },
+        lines: { include: { poLine: true } },
+      },
+      orderBy: [{ receivedAt: "desc" }],
+    }),
+    db.goodsReceipt.count({ where: { schoolId } }),
+  ]);
+
+  return { receipts, total, page, limit, totalPages: Math.ceil(total / limit) };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 8. MOVEMENT LEDGER QUERIES
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function getMovements(
+  schoolId: string,
+  params?: {
+    itemId?: string;
+    type?: MovementType;
+    fromLocationId?: string;
+    toLocationId?: string;
+    page?: number;
+    limit?: number;
+  },
+) {
+  const page = Math.max(1, params?.page || 1);
+  const limit = Math.min(100, Math.max(1, params?.limit || 20));
+  const skip = (page - 1) * limit;
+
+  const where: Prisma.InventoryMovementWhereInput = {
+    schoolId,
+    ...(params?.itemId && { itemId: params.itemId }),
+    ...(params?.type && { type: params.type }),
+    ...(params?.fromLocationId && { fromLocationId: params.fromLocationId }),
+    ...(params?.toLocationId && { toLocationId: params.toLocationId }),
+  };
+
+  const [movements, total] = await Promise.all([
+    db.inventoryMovement.findMany({
+      where,
+      skip,
+      take: limit,
+      include: {
+        item: { select: { id: true, name: true, assetTagNumber: true, itemType: true } },
+        fromLocation: { select: { id: true, name: true } },
+        toLocation: { select: { id: true, name: true } },
+        performedBy: { select: { id: true, firstName: true, lastName: true } },
+      },
+      orderBy: [{ createdAt: "desc" }],
+    }),
+    db.inventoryMovement.count({ where }),
+  ]);
+
+  return { movements, total, page, limit, totalPages: Math.ceil(total / limit) };
+}
+

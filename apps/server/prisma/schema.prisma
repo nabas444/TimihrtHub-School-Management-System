@@ -164,6 +164,7 @@ enum NotificationType {
   POLICY
   ADMISSIONS
   HOSTEL
+  INVENTORY
   GENERAL
 }
 
