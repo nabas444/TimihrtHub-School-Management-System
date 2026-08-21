@@ -4,6 +4,7 @@ import { ProgramType } from "@prisma/client";
 import * as AcademicsService from "./academics.service";
 import { sendSuccess, sendCreated, paginationMeta } from "../../utils/response";
 import { AppError } from "../../middleware/errorHandler";
+import { recordAuditEvent } from "../../utils/auditLog";
 
 // ── Subjects ─────────────────────────────────────────────────────────────────
 export const listSubjects = async (
@@ -594,13 +595,27 @@ export const recordResults = async (
         ),
       })
       .parse(req.body);
+    const saved = await AcademicsService.recordExamResults(
+      req.params.id,
+      req.user.schoolId,
+      results,
+    );
+
+    await recordAuditEvent({
+      schoolId: req.user.schoolId,
+      actorId: req.user.id,
+      actorEmail: req.user.email,
+      actorRole: req.user.role,
+      action: "GRADE_RESULT_UPDATED",
+      targetType: "ExamResult",
+      targetId: req.params.id,
+      metadata: { examId: req.params.id, count: results.length },
+      req,
+    });
+
     sendSuccess(
       res,
-      await AcademicsService.recordExamResults(
-        req.params.id,
-        req.user.schoolId,
-        results,
-      ),
+      saved,
       "Results recorded",
     );
   } catch (e) {

@@ -1,6 +1,7 @@
 {
   "nav": {
     "dashboard": "ዳሽቦርድ",
+    "admissions": "የተማሪዎች ቅበላ (Admissions)",
     "students": "ተማሪዎች",
     "parents": "ወላጆች እና አሳዳጊዎች",
     "my_students": "የእኔ ተማሪዎች",
@@ -56,6 +57,12 @@
     "recruiting_pipeline": "ቅጥር እና ምልመላ",
     "system_users": "የሲስተም ተጠቃሚዎች",
     "leave_requests": "የፈቃድ ጥያቄዎች",
+    "hostel": "የተማሪዎች ማደሪያ (ሆስቴል)",
+    "hostel_dashboard": "የክፍሎችና አልጋዎች ሁኔታ",
+    "hostel_applications": "የማደሪያ ማመልከቻዎች",
+    "hostel_daily_ops": "ዕለታዊ ክትትልና ፍቃድ",
+    "hostel_care": "ጥገናና የተማሪዎች ደህንነት",
+    "hostel_my_room": "የእኔ ክፍልና መውጫ ፈቃድ",
     "files": "ፋይሎች",
     "resources": "ግብዓቶች",
     "curriculum": "ስርዓተ ትምህርት",
@@ -66,6 +73,7 @@
     "ai_tutor": "AI አስተማሪ",
     "profile": "መገለጫ",
     "school_config": "የትምህርት ቤት ማዋቀሪያ",
+    "audit_logs": "የኦዲት ምዝግቦች",
     "billing": "ክፍያ",
     "section_overview": "አጠቃላይ እይታ",
     "section_academic": "ትምህርታዊ",

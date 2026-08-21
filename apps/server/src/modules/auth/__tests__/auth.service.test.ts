@@ -1,13 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Role } from '@prisma/client';
 
-const mockDb = {
-  user: { findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn(), create: vi.fn() },
-  refreshToken: { create: vi.fn(), findUnique: vi.fn(), delete: vi.fn(), deleteMany: vi.fn() },
-  passwordReset: { create: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
-  school: { create: vi.fn(), findFirst: vi.fn() },
-  $transaction: vi.fn(),
-};
+const { mockDb } = vi.hoisted(() => ({
+  mockDb: {
+    user: { findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn(), create: vi.fn() },
+    refreshToken: { create: vi.fn(), findUnique: vi.fn(), delete: vi.fn(), deleteMany: vi.fn() },
+    passwordReset: { create: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
+    school: { create: vi.fn(), findFirst: vi.fn() },
+    auditLog: { create: vi.fn(), findMany: vi.fn(), count: vi.fn() },
+    $transaction: vi.fn(),
+  },
+}));
 vi.mock('../../../config/database', () => ({ db: mockDb }));
 vi.mock('../../../config/redis', () => ({ cacheDel: vi.fn() }));
 vi.mock('../../../jobs/emailWorker', () => ({
@@ -31,6 +34,12 @@ vi.mock('../../../utils/jwt', () => ({
   generateOpaqueToken: vi.fn(() => 'opaque-reset-token'),
   getRefreshTokenExpiry: vi.fn(() => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)),
   getPasswordResetExpiry: vi.fn(() => new Date(Date.now() + 60 * 60 * 1000)),
+}));
+
+vi.mock('../../users/users.service', () => ({
+  getUserById: vi.fn((userId: string, schoolId: string) =>
+    Promise.resolve({ id: userId, schoolId, email: 'u@x.com' }),
+  ),
 }));
 
 import { login, refreshTokens, logout, requestPasswordReset, changePassword } from '../auth.service';

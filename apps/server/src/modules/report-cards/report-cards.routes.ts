@@ -10,6 +10,7 @@ import {
   generateCumulativeReportCardPdf,
   CumulativeReportCardData,
 } from "../../utils/pdf";
+import { recordAuditEvent } from "../../utils/auditLog";
 
 const router = Router();
 const isStaff = [Role.ADMIN, Role.SUPER_ADMIN, Role.TEACHER];
@@ -276,6 +277,22 @@ router.patch(
           isPublished,
           publishedAt: isPublished ? new Date() : null,
         },
+      });
+
+      await recordAuditEvent({
+        schoolId: req.user.schoolId,
+        actorId: req.user.id,
+        actorEmail: req.user.email,
+        actorRole: req.user.role,
+        action: "GRADE_RESULT_UPDATED",
+        targetType: "AcademicYearSummary",
+        targetId: id,
+        metadata: {
+          studentProfileId: summary.studentProfileId,
+          academicYear: summary.academicYear,
+          isPublished,
+        },
+        req,
       });
 
       // Send notifications when published

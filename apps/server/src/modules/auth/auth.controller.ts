@@ -21,6 +21,10 @@ const LoginSchema = z.object({
   schoolSlug: z.string().optional(),
 });
 
+const GoogleLoginSchema = z.object({
+  credential: z.string().min(1, "Google credential is required"),
+});
+
 const PasswordResetRequestSchema = z.object({
   email: z.string().email(),
 });
@@ -57,7 +61,7 @@ export const login = async (
 ): Promise<void> => {
   try {
     const { email, password, schoolSlug } = LoginSchema.parse(req.body);
-    const result = await AuthService.login(email, password, schoolSlug);
+    const result = await AuthService.login(email, password, schoolSlug, req);
 
     // Set refresh token as HttpOnly cookie
     res.cookie('refreshToken', result.refreshToken, {
@@ -65,6 +69,29 @@ export const login = async (
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
+
+    sendSuccess(res, { accessToken: result.accessToken, user: result.user }, 'Login successful');
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const googleLogin = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const { credential } = GoogleLoginSchema.parse(req.body);
+    const result = await AuthService.googleLogin(credential, req);
+
+    // Set refresh token as HttpOnly cookie
+    res.cookie('refreshToken', result.refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
     sendSuccess(res, { accessToken: result.accessToken, user: result.user }, 'Login successful');
@@ -104,7 +131,7 @@ export const logout = async (
 ): Promise<void> => {
   try {
     const refreshToken = req.cookies?.refreshToken;
-    await AuthService.logout(req.user.id, refreshToken);
+    await AuthService.logout(req.user.id, refreshToken, req);
     res.clearCookie('refreshToken');
     sendSuccess(res, null, 'Logged out successfully');
   } catch (err) {
@@ -159,7 +186,7 @@ export const changePassword = async (
 ): Promise<void> => {
   try {
     const { currentPassword, newPassword } = ChangePasswordSchema.parse(req.body);
-    await AuthService.changePassword(req.user.id, currentPassword, newPassword);
+    await AuthService.changePassword(req.user.id, currentPassword, newPassword, req);
     sendSuccess(res, null, 'Password changed successfully');
   } catch (err) {
     next(err);

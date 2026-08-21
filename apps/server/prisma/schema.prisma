@@ -25,6 +25,11 @@ enum Role {
   SUPER_ADMIN
 }
 
+enum AuthProvider {
+  LOCAL
+  GOOGLE
+}
+
 enum Gender {
   MALE
   FEMALE
@@ -157,7 +162,19 @@ enum NotificationType {
   ANNUAL_PLAN
   CURRICULUM
   POLICY
+  ADMISSIONS
+  HOSTEL
   GENERAL
+}
+
+enum ApplicationStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  INTERVIEW_SCHEDULED
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+  ENROLLED
 }
 
 enum AnnouncementPriority {
@@ -329,6 +346,13 @@ enum PostingStatus {
   CLOSED
 }
 
+enum SalaryType {
+  FIXED
+  NEGOTIABLE
+  RANGE
+  UNDISCLOSED
+}
+
 enum ApplicationStage {
   APPLIED
   SCREENING
@@ -473,6 +497,16 @@ model School {
   policyVersions        PolicyVersion[]
   policyAcknowledgments PolicyAcknowledgment[]
 
+  // Admissions
+  applicants            Applicant[]
+
+  // Audit Logs
+  auditLogs             AuditLog[]
+
+  // Hostel / Dormitory
+  hostels               Hostel[]
+  hostelApplications    HostelApplication[]
+
   @@map("schools")
 }
 
@@ -545,7 +579,9 @@ model User {
   schoolId         String
   role             Role
   email            String
-  password         String
+  password         String?
+  googleId         String?       @unique
+  authProvider     AuthProvider  @default(LOCAL)
   firstName        String
   middleName       String?
   lastName         String
@@ -631,6 +667,16 @@ model User {
   reviewedPolicyVersions        PolicyVersion[]         @relation("PolicyVersionReviewer")
   policyAcknowledgments         PolicyAcknowledgment[]
 
+  // Hostel / Dormitory
+  reviewedHostelApplications    HostelApplication[]       @relation("HostelApplicationReviewer")
+  allocatedHostelAllocations    HostelAllocation[]        @relation("HostelAllocator")
+  decidedHostelTransfers        HostelTransferRequest[]   @relation("TransferDecider")
+  markedNightAttendances        HostelNightAttendance[]   @relation("NightAttendanceMarker")
+  approvedHostelOutpasses       HostelOutpass[]           @relation("OutpassApprover")
+  loggedHostelVisitors          HostelVisitorLog[]        @relation("VisitorLogger")
+  reportedHostelTickets         HostelMaintenanceTicket[] @relation("TicketReporter")
+  reportedHostelIncidents       HostelIncidentReport[]    @relation("IncidentReporter")
+
   school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
 
   @@unique([schoolId, email])
@@ -692,7 +738,9 @@ model StudentProfile {
   motherMiddleName  String?
   motherLastName    String?
   fatherMobile      String?
+  fatherPhoto       String?
   motherMobile      String?
+  motherPhoto       String?
   landline          String?
   nationality       String?
   city              String?
@@ -735,6 +783,12 @@ model StudentProfile {
   tutorialEnrollments   TutorialEnrollment[]
   externalExamRecords   ExternalExamRecord[]
   ceremonyParticipants  CeremonyParticipant[]
+
+  // Hostel / Dormitory
+  hostelApplications     HostelApplication[]
+  hostelAllocations      HostelAllocation[]
+  hostelTransferRequests HostelTransferRequest[]
+  hostelVisitorLogs      HostelVisitorLog[]
 
   @@map("student_profiles")
 }
@@ -1315,6 +1369,9 @@ model FeeInvoice {
   studentProfile   StudentProfile    @relation(fields: [studentProfileId], references: [id])
   feePayments      FeePayment[]
   installmentPlans InstallmentPlan[]
+
+  // Hostel / Dormitory
+  hostelAllocations HostelAllocation[]
 
   @@index([schoolId, status])
   @@map("fee_invoices")
@@ -1927,6 +1984,7 @@ model Employee {
   lastName          String
   email             String?
   phone             String?
+  avatar            String?
   gender            Gender?
   dateOfBirth       DateTime?
   nationalId        String?
@@ -1972,6 +2030,11 @@ model Employee {
 
   hiredFromApplications JobApplication[]
 
+  // Hostel / Dormitory
+  hostelWardenOf           Hostel[]                  @relation("HostelWarden")
+  hostelStaffAssignments   HostelStaffAssignment[]   @relation("HostelStaffAssignments")
+  hostelMaintenanceTickets HostelMaintenanceTicket[] @relation("TicketAssignee")
+
   @@unique([schoolId, employeeNumber])
   @@index([schoolId, status])
   @@index([schoolId, departmentId])
@@ -2016,31 +2079,47 @@ model JobRequisition {
 }
 
 model JobPosting {
-  id                String            @id @default(uuid())
-  schoolId          String
-  requisitionId     String?
-  title             String
-  slug              String
-  departmentId      String?
-  positionId        String?
-  employmentType    EmploymentType    @default(FULL_TIME)
-  location          String?           // Campus / Location
-  description       String
-  requirements      String?
-  benefits          String?
-  salaryRange       String?
-  closingDate       DateTime?
-  status            PostingStatus     @default(DRAFT)
-  publishedAt       DateTime?
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
+  id                        String            @id @default(uuid())
+  schoolId                  String
+  requisitionId             String?
+  title                     String
+  slug                      String
+  departmentId              String?
+  positionId                String?
+  employmentType            EmploymentType    @default(FULL_TIME)
+  location                  String?           // Campus / Location
+  description               String
+  requirements              String?
+  benefits                  String?
+  salaryRange               String?
+  closingDate               DateTime?
+  status                    PostingStatus     @default(DRAFT)
+  publishedAt               DateTime?
 
-  school            School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  requisition       JobRequisition?   @relation(fields: [requisitionId], references: [id])
-  department        LookupValue?      @relation("PostingDepartment", fields: [departmentId], references: [id])
-  position          LookupValue?      @relation("PostingPosition", fields: [positionId], references: [id])
+  // Marketing Flyer & Customization Fields
+  bannerImageUrl            String?           // set from Cloudinary URL via files/upload
+  companyTagline            String?
+  salaryType                SalaryType        @default(RANGE)
+  salaryFixedAmount         Float?
+  salaryCurrency            String?           @default("USD")
+  applicationDeadlineNote   String?
+  socialLinks               Json?
+  flyerTheme                String?           @default("default")
+  contactEmail              String?
+  contactPhone              String?
+  telegramPostedAt          DateTime?
+  telegramMessageId         Int?
+  telegramChannelId         String?
 
-  applications      JobApplication[]
+  createdAt                 DateTime          @default(now())
+  updatedAt                 DateTime          @updatedAt
+
+  school                    School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  requisition               JobRequisition?   @relation(fields: [requisitionId], references: [id])
+  department                LookupValue?      @relation("PostingDepartment", fields: [departmentId], references: [id])
+  position                  LookupValue?      @relation("PostingPosition", fields: [positionId], references: [id])
+
+  applications              JobApplication[]
 
   @@unique([schoolId, slug])
   @@index([schoolId, status])
@@ -2513,5 +2592,499 @@ model PolicyAcknowledgment {
   @@index([policyId, isAcknowledged])
   @@map("policy_acknowledgments")
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ADMISSIONS / CRM (Prospective Student Pipeline)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Applicant {
+  id                   String            @id @default(uuid())
+  schoolId             String
+  school               School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  status               ApplicationStatus @default(SUBMITTED)
+
+  firstName            String
+  middleName           String?
+  lastName             String
+  dateOfBirth          DateTime?
+  gender               String?
+  gradeLevelAppliedFor String?
+  previousSchool       String?
+
+  fatherFirstName      String?
+  fatherLastName       String?
+  fatherMobile         String?
+  motherFirstName      String?
+  motherLastName       String?
+  motherMobile         String?
+  guardianEmail        String
+  guardianPhone        String?
+  address              String?
+  city                 String?
+  nationality          String?
+
+  notes                String?           // internal admin notes, not visible to applicant
+  reviewedById         String?
+  reviewedAt           DateTime?
+  rejectionReason      String?
+
+  convertedUserId      String?           // set once accepted + converted to a real User
+  convertedAt          DateTime?
+
+  submittedAt          DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  @@index([schoolId, status])
+  @@map("applicants")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AUDIT LOGS (Sensitive Action Auditing)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id           String   @id @default(uuid())
+  schoolId     String
+  actorId      String?     // nullable — some events (failed login) may not resolve to a known user
+  actorEmail   String?     // snapshot the email at time of action
+  actorRole    String?
+  action       String      // e.g. "LOGIN_SUCCESS", "LOGIN_FAILED", "LOGOUT", "PASSWORD_CHANGED", "MFA_ENABLED", "MFA_DISABLED", "GOOGLE_ACCOUNT_LINKED", "GOOGLE_SIGNIN_BLOCKED_ADMIN", "FEE_RECORD_CREATED", "FEE_RECORD_UPDATED", "PAYROLL_UPDATED", "USER_CREATED", "USER_DEACTIVATED", "SCHOOL_SETTINGS_UPDATED", "GRADE_RESULT_UPDATED", etc.
+  targetType   String?     // e.g. "User", "Fee", "SchoolSettings", "Result", "Payroll", "Applicant"
+  targetId     String?     // the id of the affected record, if applicable
+  metadata     Json?       // free-form extra context
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime @default(now())
+
+  school       School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, createdAt])
+  @@index([actorId])
+  @@index([action])
+  @@map("audit_logs")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HOSTEL / DORMITORY MANAGEMENT
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum HostelType {
+  BOYS
+  GIRLS
+  MIXED   // co-ed campus, gender-segregated at block level
+  STAFF
+}
+
+enum HostelRoomType {
+  SINGLE
+  DOUBLE
+  TRIPLE
+  QUAD
+  DORMITORY
+}
+
+enum RoomStatus {
+  AVAILABLE
+  FULL
+  MAINTENANCE
+  RESERVED
+  CLOSED
+}
+
+enum BedStatus {
+  VACANT
+  OCCUPIED
+  RESERVED     // held for an approved-but-not-yet-checked-in application
+  OUT_OF_SERVICE
+}
+
+enum HostelStaffRole {
+  WARDEN
+  ASSISTANT_WARDEN
+  MATRON
+  CARETAKER
+  SECURITY_GUARD
+  NURSE
+  COOK
+  MAINTENANCE_STAFF
+}
+
+enum HostelApplicationStatus {
+  PENDING
+  UNDER_REVIEW
+  APPROVED
+  WAITLISTED
+  REJECTED
+  WITHDRAWN
+}
+
+enum AllocationStatus {
+  ACTIVE
+  CHECKED_OUT
+  TRANSFERRED
+  TERMINATED    // disciplinary / non-payment
+  EXPIRED       // term/year ended, not renewed
+}
+
+enum TransferRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  COMPLETED
+  CANCELLED
+}
+
+enum OutpassType {
+  DAY_OUT
+  OVERNIGHT
+  HOME_VISIT
+  MEDICAL
+  EMERGENCY
+}
+
+enum OutpassStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  OUT          // student has physically left (gate check-out scanned)
+  RETURNED
+  OVERDUE
+  CANCELLED
+}
+
+enum NightAttendanceStatus {
+  PRESENT
+  ABSENT
+  ON_LEAVE
+  ON_OUTPASS
+  MEDICAL_LEAVE
+}
+
+enum MaintenanceCategory {
+  ELECTRICAL
+  PLUMBING
+  FURNITURE
+  CLEANING
+  PEST_CONTROL
+  STRUCTURAL
+  IT_NETWORK
+  OTHER
+}
+
+enum MaintenancePriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum MaintenanceStatus {
+  OPEN
+  ASSIGNED
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+  CANCELLED
+}
+
+enum IncidentSeverity {
+  MINOR
+  MODERATE
+  SEVERE
+  CRITICAL
+}
+
+// ── Physical structure ───────────────────────────────────────────────────────
+
+model Hostel {
+  id            String     @id @default(uuid())
+  schoolId      String
+  name          String
+  type          HostelType
+  wardenId      String?               // Employee.id of the head warden
+  address       String?
+  totalCapacity Int        @default(0)   // denormalized, recalculated on room changes
+  isActive      Boolean    @default(true)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  school        School               @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  warden        Employee?            @relation("HostelWarden", fields: [wardenId], references: [id])
+  blocks        HostelBlock[]
+  staff         HostelStaffAssignment[]
+  applications  HostelApplication[]
+  allocations   HostelAllocation[]
+
+  @@index([schoolId])
+  @@map("hostels")
+}
+
+model HostelBlock {
+  id          String   @id @default(uuid())
+  hostelId    String
+  name        String            // "Block A", "North Wing"
+  floorCount  Int      @default(1)
+  gradeMin    String?           // optional: restrict block to GradeLevel range (junior/senior wings)
+  gradeMax    String?
+  isActive    Boolean  @default(true)
+
+  hostel      Hostel        @relation(fields: [hostelId], references: [id], onDelete: Cascade)
+  rooms       HostelRoom[]
+  staff       HostelStaffAssignment[]
+
+  @@index([hostelId])
+  @@map("hostel_blocks")
+}
+
+model HostelRoom {
+  id          String         @id @default(uuid())
+  blockId     String
+  roomNumber  String
+  floor       Int            @default(1)
+  roomType    HostelRoomType
+  capacity    Int                 // total beds in the room
+  status      RoomStatus     @default(AVAILABLE)
+  amenities   Json?               // ["attached_bathroom","balcony","heater"]
+  isAccessible Boolean       @default(false)   // ground floor / wheelchair accessible flag
+
+  block       HostelBlock  @relation(fields: [blockId], references: [id], onDelete: Cascade)
+  beds        HostelBed[]
+  maintenanceTickets HostelMaintenanceTicket[]
+
+  @@unique([blockId, roomNumber])
+  @@index([blockId])
+  @@map("hostel_rooms")
+}
+
+model HostelBed {
+  id         String    @id @default(uuid())
+  roomId     String
+  bedNumber  String            // "A", "B" or "1","2"
+  status     BedStatus @default(VACANT)
+
+  room         HostelRoom          @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  allocations  HostelAllocation[]  // full history; only one ACTIVE at a time (enforced in service layer)
+
+  @@unique([roomId, bedNumber])
+  @@index([roomId])
+  @@map("hostel_beds")
+}
+
+// ── Staffing (thin scoping layer over Employee, mirrors TeacherProfile pattern) ─
+
+model HostelStaffAssignment {
+  id         String          @id @default(uuid())
+  hostelId   String
+  blockId    String?                 // null = whole-hostel authority (e.g. Warden)
+  employeeId String
+  staffRole  HostelStaffRole
+  shift      String?                 // "Day", "Night", "24h"
+  isActive   Boolean         @default(true)
+  assignedAt DateTime        @default(now())
+
+  hostel     Hostel       @relation(fields: [hostelId], references: [id], onDelete: Cascade)
+  block      HostelBlock? @relation(fields: [blockId], references: [id])
+  employee   Employee     @relation("HostelStaffAssignments", fields: [employeeId], references: [id])
+
+  @@index([hostelId])
+  @@index([employeeId])
+  @@map("hostel_staff_assignments")
+}
+
+// ── Intake / CRM-style application ───────────────────────────────────────────
+
+model HostelApplication {
+  id                 String                   @id @default(uuid())
+  schoolId           String
+  hostelId           String?                  // may be null until reviewed/matched
+  studentProfileId   String
+  academicTermId     String?
+  preferredRoomType  HostelRoomType?
+  medicalNotes       String?
+  specialRequests    String?                  // dietary, mobility, allergy
+  roommatePreference String?                  // free text or studentProfileId of requested roommate
+  guardianConsent    Boolean                  @default(false)
+  priorityScore      Int                      @default(0)   // computed: medical > sibling-in-hostel > distance > FIFO
+  status             HostelApplicationStatus  @default(PENDING)
+  reviewedById       String?
+  reviewNotes        String?
+  submittedAt        DateTime                 @default(now())
+  reviewedAt         DateTime?
+
+  school         School          @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  hostel         Hostel?         @relation(fields: [hostelId], references: [id])
+  studentProfile StudentProfile  @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+  reviewedBy     User?           @relation("HostelApplicationReviewer", fields: [reviewedById], references: [id])
+  allocation     HostelAllocation?
+
+  @@index([schoolId, status])
+  @@index([studentProfileId])
+  @@map("hostel_applications")
+}
+
+// ── The actual assignment ledger (one row per stay, full history retained) ──
+
+model HostelAllocation {
+  id               String            @id @default(uuid())
+  applicationId    String?           @unique
+  hostelId         String
+  bedId            String
+  studentProfileId String
+  academicTermId   String?
+  status           AllocationStatus  @default(ACTIVE)
+  allocatedById    String                    // staff/system user who ran the allocation
+  allocatedAt      DateTime          @default(now())
+  checkedInAt      DateTime?
+  checkedOutAt     DateTime?
+  vacateReason     String?
+  feeInvoiceId     String?                   // links to FeeInvoice generated on allocation
+
+  application     HostelApplication? @relation(fields: [applicationId], references: [id])
+  hostel          Hostel             @relation(fields: [hostelId], references: [id])
+  bed             HostelBed          @relation(fields: [bedId], references: [id])
+  studentProfile  StudentProfile     @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+  allocatedBy     User               @relation("HostelAllocator", fields: [allocatedById], references: [id])
+  feeInvoice      FeeInvoice?        @relation(fields: [feeInvoiceId], references: [id])
+  nightAttendance HostelNightAttendance[]
+  outpasses       HostelOutpass[]
+  incidentReports HostelIncidentReport[]
+  transfersFrom   HostelTransferRequest[]
+
+  @@index([hostelId, status])
+  @@index([studentProfileId])
+  @@index([bedId])
+  @@map("hostel_allocations")
+}
+
+model HostelTransferRequest {
+  id                String                 @id @default(uuid())
+  studentProfileId  String
+  fromAllocationId  String
+  toBedId           String?                // null = "any suitable bed, let the engine decide"
+  reason            String
+  status            TransferRequestStatus  @default(PENDING)
+  requestedAt       DateTime               @default(now())
+  decidedById       String?
+  decidedAt         DateTime?
+  decisionNotes     String?
+
+  studentProfile StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+  fromAllocation HostelAllocation @relation(fields: [fromAllocationId], references: [id])
+  decidedBy      User?            @relation("TransferDecider", fields: [decidedById], references: [id])
+
+  @@index([studentProfileId])
+  @@map("hostel_transfer_requests")
+}
+
+// ── Nightly roll call ─────────────────────────────────────────────────────────
+
+model HostelNightAttendance {
+  id             String                 @id @default(uuid())
+  allocationId   String
+  date           DateTime               @db.Date
+  status         NightAttendanceStatus
+  markedById     String
+  remarks        String?
+  markedAt       DateTime               @default(now())
+
+  allocation HostelAllocation @relation(fields: [allocationId], references: [id], onDelete: Cascade)
+  markedBy   User             @relation("NightAttendanceMarker", fields: [markedById], references: [id])
+
+  @@unique([allocationId, date])
+  @@index([date])
+  @@map("hostel_night_attendance")
+}
+
+// ── Movement: outpass / leave ────────────────────────────────────────────────
+
+model HostelOutpass {
+  id                    String        @id @default(uuid())
+  allocationId          String
+  type                  OutpassType
+  fromDateTime          DateTime
+  expectedReturnAt      DateTime
+  actualReturnAt        DateTime?
+  destination           String
+  contactAtDestination  String?
+  reason                String
+  status                OutpassStatus @default(PENDING)
+  approvedById          String?
+  parentConsentAt       DateTime?               // stamp when parent co-signs via portal
+  gateOutAt             DateTime?               // security scan-out
+  gateInAt              DateTime?               // security scan-in
+  createdAt             DateTime      @default(now())
+
+  allocation HostelAllocation @relation(fields: [allocationId], references: [id], onDelete: Cascade)
+  approvedBy User?            @relation("OutpassApprover", fields: [approvedById], references: [id])
+
+  @@index([allocationId, status])
+  @@map("hostel_outpasses")
+}
+
+// ── Visitors ──────────────────────────────────────────────────────────────────
+
+model HostelVisitorLog {
+  id                String    @id @default(uuid())
+  studentProfileId  String
+  visitorName       String
+  relationToStudent String
+  idProofType       String?
+  idProofNumber     String?
+  purpose           String?
+  checkInAt         DateTime  @default(now())
+  checkOutAt        DateTime?
+  loggedById        String            // security/gate staff
+
+  studentProfile StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+  loggedBy       User           @relation("VisitorLogger", fields: [loggedById], references: [id])
+
+  @@index([studentProfileId])
+  @@map("hostel_visitor_logs")
+}
+
+// ── Maintenance ───────────────────────────────────────────────────────────────
+
+model HostelMaintenanceTicket {
+  id            String               @id @default(uuid())
+  roomId        String
+  category      MaintenanceCategory
+  priority      MaintenancePriority  @default(MEDIUM)
+  status        MaintenanceStatus    @default(OPEN)
+  description   String
+  reportedById  String
+  assignedToId  String?              // Employee.id (caretaker/vendor)
+  cost          Decimal?             @db.Decimal(10, 2)
+  reportedAt    DateTime             @default(now())
+  resolvedAt    DateTime?
+
+  room         HostelRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  reportedBy   User       @relation("TicketReporter", fields: [reportedById], references: [id])
+  assignedTo   Employee?  @relation("TicketAssignee", fields: [assignedToId], references: [id])
+
+  @@index([roomId, status])
+  @@map("hostel_maintenance_tickets")
+}
+
+// ── Incidents ─────────────────────────────────────────────────────────────────
+
+model HostelIncidentReport {
+  id                String            @id @default(uuid())
+  allocationId      String
+  severity          IncidentSeverity
+  description       String
+  actionTaken       String?
+  reportedById      String
+  linkedBehaviourId String?           // optional FK to your existing BehaviourRecord
+  occurredAt        DateTime          @default(now())
+
+  allocation HostelAllocation @relation(fields: [allocationId], references: [id], onDelete: Cascade)
+  reportedBy User             @relation("IncidentReporter", fields: [reportedById], references: [id])
+
+  @@index([allocationId])
+  @@map("hostel_incident_reports")
+}
+
+
+
 
 

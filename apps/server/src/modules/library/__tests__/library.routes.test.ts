@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const mockDb = {
-  libraryBook: { findFirst: vi.fn(), update: vi.fn() },
-  studentProfile: { findFirst: vi.fn() },
-  libraryIssue: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-  $transaction: vi.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
-};
+const { mockDb } = vi.hoisted(() => ({
+  mockDb: {
+    libraryBook: { findFirst: vi.fn(), update: vi.fn() },
+    studentProfile: { findFirst: vi.fn() },
+    libraryIssue: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
+    $transaction: vi.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
+  },
+}));
 vi.mock('../../../config/database', () => ({ db: mockDb }));
 
 import { issueBook, returnBook } from '../library.routes';

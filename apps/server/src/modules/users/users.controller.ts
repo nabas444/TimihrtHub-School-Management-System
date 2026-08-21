@@ -10,6 +10,7 @@ import {
   sendError,
   paginationMeta,
 } from "../../utils/response";
+import { recordAuditEvent } from "../../utils/auditLog";
 
 const CreateUserSchema = z.object({
   role: z.nativeEnum(Role),
@@ -29,6 +30,7 @@ const CreateUserSchema = z.object({
   birthPlace: z.string().nullable().optional(),
   emergencyContact: z.string().nullable().optional(),
   emergencyPhone: z.string().nullable().optional(),
+  avatar: z.string().nullable().optional(),
 
   // Student specific
   admissionNumber: z.string().nullable().optional(),
@@ -50,7 +52,9 @@ const CreateUserSchema = z.object({
   motherMiddleName: z.string().nullable().optional(),
   motherLastName: z.string().nullable().optional(),
   fatherMobile: z.string().nullable().optional(),
+  fatherPhoto: z.string().nullable().optional(),
   motherMobile: z.string().nullable().optional(),
+  motherPhoto: z.string().nullable().optional(),
   landline: z.string().nullable().optional(),
   religionId: z.string().nullable().optional(),
   categoryId: z.string().nullable().optional(),
@@ -95,7 +99,7 @@ const UpdateUserSchema = z.object({
   birthPlace: z.string().nullable().optional(),
   emergencyContact: z.string().nullable().optional(),
   emergencyPhone: z.string().nullable().optional(),
-  avatar: z.string().url().nullable().optional(),
+  avatar: z.string().nullable().optional(),
   isActive: z.boolean().optional(),
   smsOptIn: z.boolean().optional(),
 
@@ -118,7 +122,9 @@ const UpdateUserSchema = z.object({
   motherMiddleName: z.string().nullable().optional(),
   motherLastName: z.string().nullable().optional(),
   fatherMobile: z.string().nullable().optional(),
+  fatherPhoto: z.string().nullable().optional(),
   motherMobile: z.string().nullable().optional(),
+  motherPhoto: z.string().nullable().optional(),
   landline: z.string().nullable().optional(),
   religionId: z.string().nullable().optional(),
   categoryId: z.string().nullable().optional(),
@@ -231,6 +237,24 @@ export const createUser = async (
       ...data,
       dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : undefined,
     });
+
+    await recordAuditEvent({
+      schoolId: req.user.schoolId,
+      actorId: req.user.id,
+      actorEmail: req.user.email,
+      actorRole: req.user.role,
+      action: "USER_CREATED",
+      targetType: "User",
+      targetId: user.id,
+      metadata: {
+        email: user.email,
+        role: user.role,
+        firstName: user.firstName,
+        lastName: user.lastName,
+      },
+      req,
+    });
+
     sendCreated(res, user, "User created successfully");
   } catch (err) {
     next(err);
@@ -268,6 +292,19 @@ export const toggleStatus = async (
       req.params.id,
       req.user.schoolId,
     );
+
+    await recordAuditEvent({
+      schoolId: req.user.schoolId,
+      actorId: req.user.id,
+      actorEmail: req.user.email,
+      actorRole: req.user.role,
+      action: result.isActive ? "USER_ACTIVATED" : "USER_DEACTIVATED",
+      targetType: "User",
+      targetId: req.params.id,
+      metadata: { isActive: result.isActive },
+      req,
+    });
+
     sendSuccess(
       res,
       result,

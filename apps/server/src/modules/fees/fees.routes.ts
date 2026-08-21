@@ -7,6 +7,7 @@ import { emitToUser } from "../../config/socket";
 import { sendSuccess, sendCreated, paginationMeta } from "../../utils/response";
 import { authorize } from "../../middleware/auth";
 import { Role } from "@prisma/client";
+import { recordAuditEvent } from "../../utils/auditLog";
 
 // ── Service ───────────────────────────────────────────────────────────────────
 const listInvoices = async (
@@ -390,13 +391,24 @@ router.post(
         })
         .parse(req.body);
 
-      sendCreated(
-        res,
-        await createInvoice(req.user.schoolId, {
-          ...data,
-          dueDate: new Date(data.dueDate),
-        }),
-      );
+      const invoice = await createInvoice(req.user.schoolId, {
+        ...data,
+        dueDate: new Date(data.dueDate),
+      });
+
+      await recordAuditEvent({
+        schoolId: req.user.schoolId,
+        actorId: req.user.id,
+        actorEmail: req.user.email,
+        actorRole: req.user.role,
+        action: "FEE_RECORD_CREATED",
+        targetType: "FeeInvoice",
+        targetId: invoice.id,
+        metadata: { title: data.title, amount: data.amount, type: data.type },
+        req,
+      });
+
+      sendCreated(res, invoice);
     } catch (e) {
       next(e);
     }
@@ -421,13 +433,29 @@ router.post(
         })
         .parse(req.body);
 
-      sendCreated(
-        res,
-        await bulkGenerateInvoices(req.user.schoolId, {
-          ...data,
-          dueDate: new Date(data.dueDate),
-        }),
-      );
+      const result = await bulkGenerateInvoices(req.user.schoolId, {
+        ...data,
+        dueDate: new Date(data.dueDate),
+      });
+
+      await recordAuditEvent({
+        schoolId: req.user.schoolId,
+        actorId: req.user.id,
+        actorEmail: req.user.email,
+        actorRole: req.user.role,
+        action: "FEE_RECORD_CREATED",
+        targetType: "FeeInvoice",
+        metadata: {
+          bulk: true,
+          createdCount: result.created,
+          title: data.title,
+          amount: data.amount,
+          classId: data.classId,
+        },
+        req,
+      });
+
+      sendCreated(res, result);
     } catch (e) {
       next(e);
     }
@@ -449,11 +477,26 @@ router.post(
         })
         .parse(req.body);
 
-      sendCreated(
-        res,
-        await recordPayment(req.params.invoiceId, req.user.schoolId, data),
-        "Payment recorded",
-      );
+      const payment = await recordPayment(req.params.invoiceId, req.user.schoolId, data);
+
+      await recordAuditEvent({
+        schoolId: req.user.schoolId,
+        actorId: req.user.id,
+        actorEmail: req.user.email,
+        actorRole: req.user.role,
+        action: "FEE_RECORD_UPDATED",
+        targetType: "FeeInvoice",
+        targetId: req.params.invoiceId,
+        metadata: {
+          paymentRecorded: true,
+          paymentId: payment.id,
+          amount: data.amount,
+          method: data.method,
+        },
+        req,
+      });
+
+      sendCreated(res, payment, "Payment recorded");
     } catch (e) {
       next(e);
     }

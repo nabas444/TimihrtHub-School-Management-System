@@ -75,6 +75,9 @@ services:
       - /app/node_modules
     environment:
       - VITE_API_PROXY_TARGET=http://server:5000
+      - VITE_GOOGLE_CLIENT_ID=731136786940-2d2kan2time7uuao7je0jrsu7ou8lkmr.apps.googleusercontent.com
+    env_file:
+      - ./apps/web/.env
     depends_on:
       - server
 

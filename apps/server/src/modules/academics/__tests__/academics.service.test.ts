@@ -1,12 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const mockDb = {
-  studentProfile: { findUnique: vi.fn() },
-  examResult: { findMany: vi.fn() },
-  gradeReport: { upsert: vi.fn(), findMany: vi.fn(), update: vi.fn() },
-  class: { findFirst: vi.fn() },
-  parentStudentLink: { findMany: vi.fn() },
-};
+const { mockDb } = vi.hoisted(() => ({
+  mockDb: {
+    studentProfile: { findUnique: vi.fn() },
+    examResult: { findMany: vi.fn() },
+    gradeReport: { upsert: vi.fn(), findMany: vi.fn(), update: vi.fn() },
+    class: { findFirst: vi.fn() },
+    parentStudentLink: { findMany: vi.fn() },
+  },
+}));
 vi.mock('../../../config/database', () => ({ db: mockDb }));
 vi.mock('../../../config/socket', () => ({ emitToUser: vi.fn() }));
 

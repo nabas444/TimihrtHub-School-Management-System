@@ -351,26 +351,42 @@ export default function StudentDetailPage() {
             <Users className="w-4 h-4 text-emerald-600" /> Parent / Guardian Information
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-            <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 space-y-1.5">
-              <h4 className="font-bold text-gray-900 text-xs">Father's Information</h4>
-              <p className="text-gray-700">
-                <strong className="text-gray-900">Name:</strong>{' '}
-                {[sp.fatherFirstName, sp.fatherMiddleName, sp.fatherLastName].filter(Boolean).join(' ') || '—'}
-              </p>
-              <p className="text-gray-700">
-                <strong className="text-gray-900">Mobile:</strong> {sp.fatherMobile || '—'}
-              </p>
+            <div className="p-3.5 bg-gray-50 rounded-xl border border-gray-200 flex items-start gap-3">
+              <Avatar
+                name={[sp.fatherFirstName, sp.fatherLastName].filter(Boolean).join(' ') || 'Father'}
+                src={sp.fatherPhoto}
+                size="lg"
+                className="shrink-0"
+              />
+              <div className="space-y-1 min-w-0 flex-1">
+                <h4 className="font-bold text-gray-900 text-xs">Father's Information</h4>
+                <p className="text-gray-700 truncate">
+                  <strong className="text-gray-900">Name:</strong>{' '}
+                  {[sp.fatherFirstName, sp.fatherMiddleName, sp.fatherLastName].filter(Boolean).join(' ') || '—'}
+                </p>
+                <p className="text-gray-700">
+                  <strong className="text-gray-900">Mobile:</strong> {sp.fatherMobile || '—'}
+                </p>
+              </div>
             </div>
 
-            <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 space-y-1.5">
-              <h4 className="font-bold text-gray-900 text-xs">Mother's Information</h4>
-              <p className="text-gray-700">
-                <strong className="text-gray-900">Name:</strong>{' '}
-                {[sp.motherFirstName, sp.motherMiddleName, sp.motherLastName].filter(Boolean).join(' ') || '—'}
-              </p>
-              <p className="text-gray-700">
-                <strong className="text-gray-900">Mobile:</strong> {sp.motherMobile || '—'}
-              </p>
+            <div className="p-3.5 bg-gray-50 rounded-xl border border-gray-200 flex items-start gap-3">
+              <Avatar
+                name={[sp.motherFirstName, sp.motherLastName].filter(Boolean).join(' ') || 'Mother'}
+                src={sp.motherPhoto}
+                size="lg"
+                className="shrink-0"
+              />
+              <div className="space-y-1 min-w-0 flex-1">
+                <h4 className="font-bold text-gray-900 text-xs">Mother's Information</h4>
+                <p className="text-gray-700 truncate">
+                  <strong className="text-gray-900">Name:</strong>{' '}
+                  {[sp.motherFirstName, sp.motherMiddleName, sp.motherLastName].filter(Boolean).join(' ') || '—'}
+                </p>
+                <p className="text-gray-700">
+                  <strong className="text-gray-900">Mobile:</strong> {sp.motherMobile || '—'}
+                </p>
+              </div>
             </div>
           </div>
 

@@ -23,6 +23,7 @@ export const errorHandler = (
 ): void => {
   // Zod validation errors
   if (err instanceof ZodError) {
+    logger.warn(`Validation error on ${req.method} ${req.originalUrl}:`, err.errors);
     res.status(422).json({
       success: false,
       message: 'Validation failed',

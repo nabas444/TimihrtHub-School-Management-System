@@ -36,6 +36,7 @@ import {
 import Modal from "../../components/ui/Modal";
 import PageLoader from "../../components/ui/PageLoader";
 import LookupSelect from "../../components/shared/LookupSelect";
+import PhotoUploadInput from "../../components/shared/PhotoUploadInput";
 import { useAuthStore } from "../../store/authStore";
 import clsx from "clsx";
 import toast from "react-hot-toast";
@@ -78,6 +79,7 @@ const COMMON_SPECIALIZATIONS = [
 ];
 
 const initialStaffForm = {
+  avatar: "",
   role: "TEACHER",
   firstName: "",
   middleName: "",
@@ -253,6 +255,7 @@ export default function StaffPage() {
       !recordedSubjects.some((s) => s.name.toLowerCase() === spec.toLowerCase());
 
     setEditForm({
+      avatar: staffUser.avatar || "",
       role: staffUser.role,
       firstName: staffUser.firstName || "",
       middleName: staffUser.middleName || "",
@@ -604,6 +607,18 @@ export default function StaffPage() {
           {/* TAB 1: PERSONAL */}
           {activeTab === "personal" && (
             <div className="space-y-3 text-xs">
+              {/* Staff Photo Upload & Live Camera */}
+              <div className="p-3.5 bg-gray-50 rounded-2xl border border-gray-200 shadow-2xs">
+                <PhotoUploadInput
+                  value={form.avatar}
+                  onChange={(url) => setForm((f) => ({ ...f, avatar: url }))}
+                  label="Staff Portrait Photo"
+                  name={`${form.firstName} ${form.lastName}`}
+                  category="STAFF_PHOTO"
+                  hint="Upload a professional portrait or take a picture live with your camera"
+                />
+              </div>
+
               <div>
                 <label className="label font-bold">System Role *</label>
                 <select className="input text-xs font-bold" value={form.role} onChange={set("role")}>
@@ -836,6 +851,18 @@ export default function StaffPage() {
           {/* EDIT TAB 1: PERSONAL */}
           {activeTab === "personal" && (
             <div className="space-y-3 text-xs">
+              {/* Staff Photo Upload & Live Camera */}
+              <div className="p-3.5 bg-gray-50 rounded-2xl border border-gray-200 shadow-2xs">
+                <PhotoUploadInput
+                  value={editForm.avatar}
+                  onChange={(url) => setEditForm((f) => ({ ...f, avatar: url }))}
+                  label="Staff Portrait Photo"
+                  name={`${editForm.firstName || ""} ${editForm.lastName || ""}`}
+                  category="STAFF_PHOTO"
+                  hint="Upload a professional portrait or take a picture live with your camera"
+                />
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="label font-bold">First Name *</label>

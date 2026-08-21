@@ -26,6 +26,11 @@ import {
   Eye,
   Edit2,
   Trash2,
+  Upload,
+  Image as ImageIcon,
+  FileDown,
+  Globe,
+  Share2,
 } from "lucide-react";
 import api from "../../lib/api";
 import { downloadFile } from "../../lib/downloadFile";
@@ -64,9 +69,12 @@ export default function RecruitingPage() {
   const [feedbackModalOpen, setFeedbackModalOpen] = useState(false);
   const [offerModalOpen, setOfferModalOpen] = useState(false);
   const [hireModalOpen, setHireModalOpen] = useState(false);
+  const [bannerUploading, setBannerUploading] = useState(false);
 
   const [selectedCandidate, setSelectedCandidate] = useState(null);
   const [selectedInterviewId, setSelectedInterviewId] = useState(null);
+  const [editingPosting, setEditingPosting] = useState(null);
+  const [deleteConfirmPosting, setDeleteConfirmPosting] = useState(null);
 
   // Forms
   const [reqForm, setReqForm] = useState({
@@ -85,6 +93,7 @@ export default function RecruitingPage() {
 
   const [postingForm, setPostingForm] = useState({
     title: "",
+    requisitionId: "",
     departmentId: "",
     positionId: "",
     employmentType: "FULL_TIME",
@@ -92,9 +101,21 @@ export default function RecruitingPage() {
     description: "",
     requirements: "",
     benefits: "Tuition waiver for staff children, medical coverage, transport subsidy.",
+    salaryType: "RANGE",
     salaryRange: "20,000 - 30,000 ETB",
+    salaryFixedAmount: "",
+    salaryCurrency: "USD",
     closingDate: "",
     publishNow: true,
+
+    // Marketing Flyer Fields
+    bannerImageUrl: "",
+    companyTagline: "",
+    applicationDeadlineNote: "",
+    socialLinks: [],
+    flyerTheme: "default",
+    contactEmail: "",
+    contactPhone: "",
   });
 
   const [interviewForm, setInterviewForm] = useState({
@@ -180,12 +201,120 @@ export default function RecruitingPage() {
   });
 
   const createPostingMutation = useMutation({
-    mutationFn: (payload) => api.post("/recruiting/postings", payload),
+    mutationFn: (payload) => {
+      const cleaned = {
+        ...payload,
+        requisitionId: payload.requisitionId || null,
+        departmentId: payload.departmentId || null,
+        positionId: payload.positionId || null,
+        location: payload.location || null,
+        requirements: payload.requirements || null,
+        benefits: payload.benefits || null,
+        salaryRange: payload.salaryRange || null,
+        salaryFixedAmount:
+          payload.salaryType === "FIXED" && payload.salaryFixedAmount
+            ? parseFloat(payload.salaryFixedAmount)
+            : null,
+        closingDate: payload.closingDate || null,
+        bannerImageUrl: payload.bannerImageUrl || null,
+        companyTagline: payload.companyTagline || null,
+        applicationDeadlineNote: payload.applicationDeadlineNote || null,
+        contactEmail: payload.contactEmail || null,
+        contactPhone: payload.contactPhone || null,
+        socialLinks: (payload.socialLinks || [])
+          .filter((s) => s.url && s.url.trim() !== "")
+          .map((s) => ({
+            platform: s.platform || "telegram",
+            label: s.label || "",
+            url: s.url.trim().startsWith("http") ? s.url.trim() : `https://${s.url.trim()}`,
+          })),
+      };
+      return api.post("/recruiting/postings", cleaned);
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["job-postings"] });
       qc.invalidateQueries({ queryKey: ["recruiting-dashboard"] });
-      toast.success("Job posting published");
+      toast.success("Job posting published successfully");
       setCreatePostingModalOpen(false);
+    },
+    onError: (err) => {
+      const fieldErrors = err.response?.data?.errors
+        ?.map((e) => `${e.field ? e.field + ": " : ""}${e.message}`)
+        .join(", ");
+      const msg = fieldErrors || err.response?.data?.message || "Failed to publish job posting";
+      toast.error(msg);
+    },
+  });
+
+  const updatePostingMutation = useMutation({
+    mutationFn: ({ id, payload }) => {
+      const cleaned = {
+        ...payload,
+        requisitionId: payload.requisitionId || null,
+        departmentId: payload.departmentId || null,
+        positionId: payload.positionId || null,
+        location: payload.location || null,
+        requirements: payload.requirements || null,
+        benefits: payload.benefits || null,
+        salaryRange: payload.salaryRange || null,
+        salaryFixedAmount:
+          payload.salaryType === "FIXED" && payload.salaryFixedAmount
+            ? parseFloat(payload.salaryFixedAmount)
+            : null,
+        closingDate: payload.closingDate || null,
+        bannerImageUrl: payload.bannerImageUrl || null,
+        companyTagline: payload.companyTagline || null,
+        applicationDeadlineNote: payload.applicationDeadlineNote || null,
+        contactEmail: payload.contactEmail || null,
+        contactPhone: payload.contactPhone || null,
+        socialLinks: (payload.socialLinks || [])
+          .filter((s) => s.url && s.url.trim() !== "")
+          .map((s) => ({
+            platform: s.platform || "telegram",
+            label: s.label || "",
+            url: s.url.trim().startsWith("http") ? s.url.trim() : `https://${s.url.trim()}`,
+          })),
+      };
+      return api.patch(`/recruiting/postings/${id}`, cleaned);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["job-postings"] });
+      qc.invalidateQueries({ queryKey: ["recruiting-dashboard"] });
+      toast.success("Job posting updated successfully");
+      setCreatePostingModalOpen(false);
+      setEditingPosting(null);
+    },
+    onError: (err) => {
+      const fieldErrors = err.response?.data?.errors
+        ?.map((e) => `${e.field ? e.field + ": " : ""}${e.message}`)
+        .join(", ");
+      const msg = fieldErrors || err.response?.data?.message || "Failed to update job posting";
+      toast.error(msg);
+    },
+  });
+
+  const changePostingStatusMutation = useMutation({
+    mutationFn: ({ id, status }) => api.patch(`/recruiting/postings/${id}`, { status }),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ["job-postings"] });
+      qc.invalidateQueries({ queryKey: ["recruiting-dashboard"] });
+      toast.success(`Job posting status updated to ${vars.status}`);
+    },
+    onError: (err) => {
+      toast.error(err.response?.data?.message || "Failed to change posting status");
+    },
+  });
+
+  const deletePostingMutation = useMutation({
+    mutationFn: (id) => api.delete(`/recruiting/postings/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["job-postings"] });
+      qc.invalidateQueries({ queryKey: ["recruiting-dashboard"] });
+      toast.success("Job posting deleted and removed from channel");
+      setDeleteConfirmPosting(null);
+    },
+    onError: (err) => {
+      toast.error(err.response?.data?.message || "Failed to delete job posting");
     },
   });
 
@@ -250,6 +379,114 @@ export default function RecruitingPage() {
     setCandidateDetailModalOpen(true);
   };
 
+  const handleBannerUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please choose a valid image file (PNG, JPG, WebP)");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Image file must be under 5MB");
+      return;
+    }
+
+    setBannerUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("category", "MARKETING_FLYER");
+      const res = await api.post("/files/upload", formData);
+      const url = res.data?.data?.url || res.data?.url;
+      if (url) {
+        setPostingForm((prev) => ({ ...prev, bannerImageUrl: url }));
+        toast.success("Banner image uploaded successfully");
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Failed to upload banner image");
+    } finally {
+      setBannerUploading(false);
+    }
+  };
+
+  const handleAddSocialLink = () => {
+    setPostingForm((prev) => ({
+      ...prev,
+      socialLinks: [
+        ...(prev.socialLinks || []),
+        { platform: "linkedin", url: "", label: "" },
+      ],
+    }));
+  };
+
+  const handleUpdateSocialLink = (index, field, val) => {
+    setPostingForm((prev) => {
+      const updated = [...(prev.socialLinks || [])];
+      updated[index] = { ...updated[index], [field]: val };
+      return { ...prev, socialLinks: updated };
+    });
+  };
+
+  const handleOpenCreatePosting = () => {
+    setEditingPosting(null);
+    setPostingForm({
+      title: "",
+      requisitionId: "",
+      departmentId: "",
+      positionId: "",
+      employmentType: "FULL_TIME",
+      location: "Main Campus",
+      description: "",
+      requirements: "",
+      benefits: "Tuition waiver for staff children, medical coverage, transport subsidy.",
+      salaryType: "RANGE",
+      salaryRange: "20,000 - 30,000 ETB",
+      salaryFixedAmount: "",
+      salaryCurrency: "USD",
+      closingDate: "",
+      status: "PUBLISHED",
+      publishNow: true,
+      bannerImageUrl: "",
+      companyTagline: "",
+      applicationDeadlineNote: "",
+      socialLinks: [],
+      flyerTheme: "default",
+      contactEmail: "",
+      contactPhone: "",
+    });
+    setCreatePostingModalOpen(true);
+  };
+
+  const handleOpenEditPosting = (p) => {
+    setEditingPosting(p);
+    setPostingForm({
+      title: p.title || "",
+      requisitionId: p.requisitionId || "",
+      departmentId: p.departmentId || "",
+      positionId: p.positionId || "",
+      employmentType: p.employmentType || "FULL_TIME",
+      location: p.location || "Main Campus",
+      description: p.description || "",
+      requirements: p.requirements || "",
+      benefits: p.benefits || "",
+      salaryType: p.salaryType || "RANGE",
+      salaryRange: p.salaryRange || "",
+      salaryFixedAmount: p.salaryFixedAmount || "",
+      salaryCurrency: p.salaryCurrency || "USD",
+      closingDate: p.closingDate ? new Date(p.closingDate).toISOString().split("T")[0] : "",
+      status: p.status || "DRAFT",
+      publishNow: p.status === "PUBLISHED",
+      bannerImageUrl: p.bannerImageUrl || "",
+      companyTagline: p.companyTagline || "",
+      applicationDeadlineNote: p.applicationDeadlineNote || "",
+      socialLinks: Array.isArray(p.socialLinks) ? p.socialLinks : [],
+      flyerTheme: p.flyerTheme || "default",
+      contactEmail: p.contactEmail || "",
+      contactPhone: p.contactPhone || "",
+    });
+    setCreatePostingModalOpen(true);
+  };
+
   const handleCreateOffer = () => {
     if (!applicationDetail) return;
     setOfferForm({
@@ -295,7 +532,7 @@ export default function RecruitingPage() {
             New Requisition
           </button>
           <button
-            onClick={() => setCreatePostingModalOpen(true)}
+            onClick={handleOpenCreatePosting}
             className="btn-primary text-xs inline-flex items-center gap-1.5"
           >
             <Plus className="w-3.5 h-3.5" />
@@ -421,34 +658,141 @@ export default function RecruitingPage() {
             {postings?.map((p) => (
               <div
                 key={p.id}
-                className="bg-white p-5 rounded-xl border border-gray-200 shadow-xs flex flex-col justify-between space-y-4"
+                className="bg-white rounded-xl border border-gray-200 shadow-xs flex flex-col justify-between overflow-hidden hover:shadow-md transition-all"
               >
-                <div>
-                  <div className="flex items-start justify-between gap-2">
-                    <h3 className="font-bold text-gray-900 text-sm">{p.title}</h3>
-                    <Badge variant={p.status === "PUBLISHED" ? "green" : "gray"}>
-                      {p.status}
-                    </Badge>
+                {p.bannerImageUrl && (
+                  <div className="h-28 w-full overflow-hidden bg-gray-100 relative">
+                    <img
+                      src={p.bannerImageUrl}
+                      alt={p.title}
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
                   </div>
-                  <p className="text-xs text-primary-700 font-semibold mt-1">
-                    {p.department?.value || "General"} • {p.employmentType?.replace("_", " ")}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-2 line-clamp-3">{p.description}</p>
-                </div>
+                )}
 
-                <div className="pt-3 border-t border-gray-100 flex items-center justify-between">
-                  <span className="text-xs font-bold text-gray-800">
-                    {p._count?.applications || 0} Applicants
-                  </span>
-                  <button
-                    onClick={() => {
-                      setSelectedPostingId(p.id);
-                      setActiveTab("pipeline");
-                    }}
-                    className="btn-ghost text-xs text-primary-600 hover:text-primary-800 font-semibold inline-flex items-center gap-1"
-                  >
-                    View Pipeline <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
+                <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
+                  <div>
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="font-bold text-gray-900 text-sm">{p.title}</h3>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <Badge
+                          variant={
+                            p.status === "PUBLISHED"
+                              ? "green"
+                              : p.status === "CLOSED"
+                              ? "red"
+                              : "gray"
+                          }
+                        >
+                          {p.status}
+                        </Badge>
+                        {p.telegramPostedAt && (
+                          <span
+                            className="text-[10px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200 flex items-center gap-1"
+                            title={`Posted to Telegram channel on ${new Date(p.telegramPostedAt).toLocaleString()}`}
+                          >
+                            📢 Telegram
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {p.companyTagline && (
+                      <p className="text-[11px] text-gray-500 italic mt-0.5 line-clamp-1">
+                        {p.companyTagline}
+                      </p>
+                    )}
+
+                    <p className="text-xs text-primary-700 font-semibold mt-1">
+                      {p.department?.value || "General"} • {p.employmentType?.replace("_", " ")}
+                    </p>
+
+                    <p className="text-xs text-gray-500 mt-2 line-clamp-2">{p.description}</p>
+                  </div>
+
+                  <div className="pt-2 border-t border-gray-100 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-bold text-gray-800">
+                        {p._count?.applications || 0} Applicants
+                      </span>
+                      {p.salaryType !== "UNDISCLOSED" && (
+                        <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
+                          {p.salaryType === "FIXED"
+                            ? `${p.salaryFixedAmount?.toLocaleString()} ${p.salaryCurrency || "USD"}`
+                            : p.salaryType === "NEGOTIABLE"
+                            ? "Negotiable"
+                            : p.salaryRange || "Competitive"}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Actions Toolbar */}
+                    <div className="flex items-center justify-between pt-1 gap-1">
+                      <div className="flex items-center gap-1">
+                        <a
+                          href={`/api/v1/recruiting/postings/${p.id}/preview-flyer.pdf`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="btn-secondary text-[11px] py-1 px-2 inline-flex items-center gap-1"
+                          title="Download / View Flyer PDF"
+                        >
+                          <FileDown className="w-3.5 h-3.5 text-primary-600" />
+                          Flyer
+                        </a>
+
+                        {p.status === "PUBLISHED" ? (
+                          <button
+                            onClick={() =>
+                              changePostingStatusMutation.mutate({ id: p.id, status: "CLOSED" })
+                            }
+                            disabled={changePostingStatusMutation.isPending}
+                            className="btn-secondary text-[11px] py-1 px-2 text-amber-700 hover:text-amber-800"
+                            title="Close this job posting"
+                          >
+                            Close
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() =>
+                              changePostingStatusMutation.mutate({ id: p.id, status: "PUBLISHED" })
+                            }
+                            disabled={changePostingStatusMutation.isPending}
+                            className="btn-secondary text-[11px] py-1 px-2 text-emerald-700 hover:text-emerald-800"
+                            title="Publish to career board & Telegram"
+                          >
+                            Publish
+                          </button>
+                        )}
+
+                        <button
+                          onClick={() => handleOpenEditPosting(p)}
+                          className="p-1 text-gray-400 hover:text-primary-600 rounded transition"
+                          title="Edit Posting"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+
+                        <button
+                          onClick={() => setDeleteConfirmPosting(p)}
+                          className="p-1 text-gray-400 hover:text-red-600 rounded transition"
+                          title="Delete Posting (and remove announcement from Telegram)"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          setSelectedPostingId(p.id);
+                          setActiveTab("pipeline");
+                        }}
+                        className="btn-ghost text-xs text-primary-600 hover:text-primary-800 font-semibold inline-flex items-center gap-0.5"
+                      >
+                        Pipeline <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             ))}
@@ -1059,75 +1403,510 @@ export default function RecruitingPage() {
         </div>
       </Modal>
 
-      {/* ── CREATE POSTING MODAL ────────────────────────────────────────── */}
+      {/* ── CREATE / EDIT POSTING MODAL ─────────────────────────────────── */}
       <Modal
         open={createPostingModalOpen}
-        onClose={() => setCreatePostingModalOpen(false)}
-        title="Publish Job Posting"
-        size="lg"
+        onClose={() => {
+          setCreatePostingModalOpen(false);
+          setEditingPosting(null);
+        }}
+        title={editingPosting ? `Edit Job Posting — ${editingPosting.title}` : "Publish Rich Job Posting & Marketing Flyer"}
+        size="xl"
         footer={
-          <div className="flex justify-end gap-2 w-full">
-            <button className="btn-secondary text-xs" onClick={() => setCreatePostingModalOpen(false)}>
+          <div className="flex justify-end items-center gap-2 w-full">
+            <button
+              className="btn-secondary text-xs"
+              onClick={() => {
+                setCreatePostingModalOpen(false);
+                setEditingPosting(null);
+              }}
+            >
               Cancel
             </button>
             <button
               className="btn-primary text-xs"
-              onClick={() => createPostingMutation.mutate(postingForm)}
-              disabled={createPostingMutation.isPending || !postingForm.title || !postingForm.description}
+              onClick={() => {
+                if (editingPosting) {
+                  updatePostingMutation.mutate({ id: editingPosting.id, payload: postingForm });
+                } else {
+                  createPostingMutation.mutate(postingForm);
+                }
+              }}
+              disabled={
+                (editingPosting ? updatePostingMutation.isPending : createPostingMutation.isPending) ||
+                !postingForm.title ||
+                !postingForm.description
+              }
             >
-              {createPostingMutation.isPending ? "Publishing…" : "Publish Job Posting"}
+              {editingPosting
+                ? updatePostingMutation.isPending
+                  ? "Saving Changes…"
+                  : "Save Changes"
+                : createPostingMutation.isPending
+                ? "Publishing…"
+                : postingForm.publishNow
+                ? "Publish Job Posting"
+                : "Save as Draft"}
             </button>
           </div>
         }
       >
-        <div className="space-y-3 text-xs">
-          <div>
-            <label className="label font-bold">Posting Title *</label>
-            <input
-              className="input text-xs"
-              value={postingForm.title}
-              onChange={(e) => setPostingForm({ ...postingForm, title: e.target.value })}
-              placeholder="e.g. Senior ICT & Computer Science Teacher"
-              required
-            />
+        <div className="space-y-4 text-xs max-h-[75vh] overflow-y-auto pr-1">
+          {/* 1. Banner Image Upload */}
+          <div className="p-3.5 bg-gray-50 rounded-2xl border border-gray-200 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="label font-bold flex items-center gap-1.5 mb-0">
+                <ImageIcon className="w-4 h-4 text-primary-600" />
+                Marketing Banner Flyer Image
+              </label>
+              <span className="text-[11px] text-gray-400">
+                JPG, PNG, WebP up to 5MB
+              </span>
+            </div>
+
+            {postingForm.bannerImageUrl ? (
+              <div className="relative rounded-xl overflow-hidden border border-gray-200 h-36 w-full group">
+                <img
+                  src={postingForm.bannerImageUrl}
+                  alt="Banner preview"
+                  className="w-full h-full object-cover"
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPostingForm({ ...postingForm, bannerImageUrl: "" })
+                  }
+                  className="absolute top-2 right-2 bg-red-600 text-white p-1.5 rounded-lg shadow-md hover:bg-red-700 transition"
+                  title="Remove Image"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <label className="border-2 border-dashed border-gray-300 hover:border-primary-500 rounded-xl p-4 flex flex-col items-center justify-center gap-1.5 cursor-pointer bg-white transition text-center">
+                <Upload className="w-5 h-5 text-gray-400" />
+                <span className="font-semibold text-gray-700">
+                  {bannerUploading
+                    ? "Uploading image…"
+                    : "Click to upload banner image"}
+                </span>
+                <span className="text-[10px] text-gray-400">
+                  Will be displayed on the public career page and generated flyer PDF
+                </span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleBannerUpload}
+                  disabled={bannerUploading}
+                  className="hidden"
+                />
+              </label>
+            )}
           </div>
+
+          {/* 2. Title & Tagline */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="label font-bold">Posting Title *</label>
+              <input
+                className="input text-xs"
+                value={postingForm.title}
+                onChange={(e) =>
+                  setPostingForm({ ...postingForm, title: e.target.value })
+                }
+                placeholder="e.g. Senior ICT & Computer Science Teacher"
+                required
+              />
+            </div>
+            <div>
+              <label className="label font-bold">Marketing Tagline / Slogan</label>
+              <input
+                className="input text-xs"
+                value={postingForm.companyTagline}
+                onChange={(e) =>
+                  setPostingForm({
+                    ...postingForm,
+                    companyTagline: e.target.value,
+                  })
+                }
+                placeholder="e.g. Inspiring Future Innovators and Global Thinkers"
+              />
+            </div>
+          </div>
+
+          {/* 3. Requisition, Department & Employment Type */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="label font-bold">Linked Requisition</label>
+              <select
+                className="input text-xs"
+                value={postingForm.requisitionId || ""}
+                onChange={(e) =>
+                  setPostingForm({
+                    ...postingForm,
+                    requisitionId: e.target.value || null,
+                  })
+                }
+              >
+                <option value="">None (Independent Posting)</option>
+                {requisitions?.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.requisitionNumber} — {r.title}
+                  </option>
+                ))}
+              </select>
+            </div>
             <LookupSelect
               type="DEPARTMENT"
               label="Department"
               value={postingForm.departmentId}
-              onChange={(id) => setPostingForm({ ...postingForm, departmentId: id })}
+              onChange={(id) =>
+                setPostingForm({ ...postingForm, departmentId: id })
+              }
             />
             <div>
-              <label className="label font-bold">Salary Range</label>
+              <label className="label font-bold">Employment Type</label>
+              <select
+                className="input text-xs"
+                value={postingForm.employmentType}
+                onChange={(e) =>
+                  setPostingForm({
+                    ...postingForm,
+                    employmentType: e.target.value,
+                  })
+                }
+              >
+                <option value="FULL_TIME">Full-Time</option>
+                <option value="PART_TIME">Part-Time</option>
+                <option value="CONTRACT">Contract</option>
+                <option value="TEMPORARY">Temporary / Seasonal</option>
+                <option value="INTERN">Internship</option>
+              </select>
+            </div>
+          </div>
+
+          {/* 4. Location & Contact Overrides */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="label font-bold">Campus / Location</label>
               <input
                 className="input text-xs"
-                value={postingForm.salaryRange}
-                onChange={(e) => setPostingForm({ ...postingForm, salaryRange: e.target.value })}
+                value={postingForm.location}
+                onChange={(e) =>
+                  setPostingForm({ ...postingForm, location: e.target.value })
+                }
+                placeholder="e.g. Main Campus / Secondary Wing"
+              />
+            </div>
+            <div>
+              <label className="label font-bold">Inquiries Contact Email</label>
+              <input
+                type="email"
+                className="input text-xs"
+                value={postingForm.contactEmail}
+                onChange={(e) =>
+                  setPostingForm({ ...postingForm, contactEmail: e.target.value })
+                }
+                placeholder="careers@timhirthub.edu.et"
+              />
+            </div>
+            <div>
+              <label className="label font-bold">Inquiries Phone</label>
+              <input
+                className="input text-xs"
+                value={postingForm.contactPhone}
+                onChange={(e) =>
+                  setPostingForm({ ...postingForm, contactPhone: e.target.value })
+                }
+                placeholder="+251 91 123 4567"
               />
             </div>
           </div>
+
+          {/* 5. Salary Configuration */}
+          <div className="p-3.5 bg-gray-50 rounded-2xl border border-gray-200 space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="label font-bold text-gray-900 mb-0 flex items-center gap-1.5">
+                <DollarSign className="w-4 h-4 text-emerald-600" />
+                Compensation &amp; Salary Structure
+              </label>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="label font-semibold">Salary Display Mode</label>
+                <select
+                  className="input text-xs font-bold"
+                  value={postingForm.salaryType}
+                  onChange={(e) =>
+                    setPostingForm({ ...postingForm, salaryType: e.target.value })
+                  }
+                >
+                  <option value="RANGE">Salary Range (e.g. Min - Max)</option>
+                  <option value="FIXED">Fixed Exact Salary</option>
+                  <option value="NEGOTIABLE">Negotiable</option>
+                  <option value="UNDISCLOSED">Undisclosed (Keep Hidden)</option>
+                </select>
+              </div>
+
+              {postingForm.salaryType === "RANGE" && (
+                <div className="sm:col-span-2">
+                  <label className="label font-semibold">Salary Range Text *</label>
+                  <input
+                    className="input text-xs font-bold text-emerald-700"
+                    value={postingForm.salaryRange}
+                    onChange={(e) =>
+                      setPostingForm({ ...postingForm, salaryRange: e.target.value })
+                    }
+                    placeholder="e.g. 25,000 - 35,000 ETB / month"
+                  />
+                  <p className="text-[10px] text-gray-400 mt-1">
+                    Auto-derived from linked requisition if left blank.
+                  </p>
+                </div>
+              )}
+
+              {postingForm.salaryType === "FIXED" && (
+                <>
+                  <div>
+                    <label className="label font-semibold">Fixed Amount *</label>
+                    <input
+                      type="number"
+                      min="1"
+                      className="input text-xs font-bold text-emerald-700"
+                      value={postingForm.salaryFixedAmount}
+                      onChange={(e) =>
+                        setPostingForm({
+                          ...postingForm,
+                          salaryFixedAmount: parseFloat(e.target.value) || "",
+                        })
+                      }
+                      placeholder="e.g. 30000"
+                    />
+                  </div>
+                  <div>
+                    <label className="label font-semibold">Currency</label>
+                    <input
+                      className="input text-xs font-bold"
+                      value={postingForm.salaryCurrency}
+                      onChange={(e) =>
+                        setPostingForm({
+                          ...postingForm,
+                          salaryCurrency: e.target.value,
+                        })
+                      }
+                      placeholder="e.g. USD, ETB, EUR"
+                    />
+                  </div>
+                </>
+              )}
+
+              {(postingForm.salaryType === "NEGOTIABLE" ||
+                postingForm.salaryType === "UNDISCLOSED") && (
+                <div className="sm:col-span-2 flex items-center text-gray-500 text-xs italic bg-white p-2.5 rounded-xl border border-gray-200">
+                  {postingForm.salaryType === "NEGOTIABLE"
+                    ? "Salary will be presented as 'Negotiable' across public job board and marketing flyers."
+                    : "Salary numbers are kept private and completely omitted from public listings and flyers."}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* 6. Closing Date & Deadline Note */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="label font-bold">Application Closing Date</label>
+              <input
+                type="date"
+                className="input text-xs"
+                value={postingForm.closingDate}
+                onChange={(e) =>
+                  setPostingForm({ ...postingForm, closingDate: e.target.value })
+                }
+              />
+            </div>
+            <div>
+              <label className="label font-bold">Deadline Note / Urgency</label>
+              <input
+                className="input text-xs"
+                value={postingForm.applicationDeadlineNote}
+                onChange={(e) =>
+                  setPostingForm({
+                    ...postingForm,
+                    applicationDeadlineNote: e.target.value,
+                  })
+                }
+                placeholder="e.g. Interviews scheduled on rolling basis"
+              />
+            </div>
+          </div>
+
+          {/* 7. Description, Requirements, Benefits */}
           <div>
-            <label className="label font-bold">Job Description *</label>
+            <label className="label font-bold">Role Description &amp; Responsibilities *</label>
             <textarea
               rows={3}
               className="input text-xs"
               value={postingForm.description}
-              onChange={(e) => setPostingForm({ ...postingForm, description: e.target.value })}
-              placeholder="Detailed job description and responsibilities..."
+              onChange={(e) =>
+                setPostingForm({ ...postingForm, description: e.target.value })
+              }
+              placeholder="Detailed job description and key day-to-day duties..."
               required
             />
           </div>
-          <div>
-            <label className="label font-bold">Key Requirements</label>
-            <textarea
-              rows={2}
-              className="input text-xs"
-              value={postingForm.requirements}
-              onChange={(e) => setPostingForm({ ...postingForm, requirements: e.target.value })}
-              placeholder="Qualifications, years of experience, teaching licenses required..."
-            />
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="label font-bold">Key Qualifications &amp; Requirements</label>
+              <textarea
+                rows={2}
+                className="input text-xs"
+                value={postingForm.requirements}
+                onChange={(e) =>
+                  setPostingForm({ ...postingForm, requirements: e.target.value })
+                }
+                placeholder="Required degrees, licenses, years of experience..."
+              />
+            </div>
+            <div>
+              <label className="label font-bold">Benefits &amp; Perks</label>
+              <textarea
+                rows={2}
+                className="input text-xs"
+                value={postingForm.benefits}
+                onChange={(e) =>
+                  setPostingForm({ ...postingForm, benefits: e.target.value })
+                }
+                placeholder="Medical coverage, tuition discounts, housing allowance..."
+              />
+            </div>
           </div>
+
+          {/* 8. Social Channels & Marketing Links */}
+          <div className="p-3.5 bg-gray-50 rounded-2xl border border-gray-200 space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="label font-bold text-gray-900 mb-0 flex items-center gap-1.5">
+                <Share2 className="w-4 h-4 text-primary-600" />
+                Social Media &amp; Flyer Contact Links ({postingForm.socialLinks?.length || 0})
+              </label>
+              <button
+                type="button"
+                onClick={handleAddSocialLink}
+                className="btn-secondary text-[11px] py-1 px-2 inline-flex items-center gap-1"
+              >
+                <Plus className="w-3.5 h-3.5 text-primary-600" /> Add Link
+              </button>
+            </div>
+
+            {postingForm.socialLinks?.length === 0 ? (
+              <p className="text-[11px] text-gray-400 italic">
+                No social channels added yet. Add LinkedIn, WhatsApp, or Telegram links to appear on the flyer.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {postingForm.socialLinks.map((s, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <select
+                      className="input text-xs py-1.5 w-36 font-semibold"
+                      value={s.platform}
+                      onChange={(e) =>
+                        handleUpdateSocialLink(idx, "platform", e.target.value)
+                      }
+                    >
+                      <option value="linkedin">LinkedIn</option>
+                      <option value="whatsapp">WhatsApp</option>
+                      <option value="telegram">Telegram</option>
+                      <option value="facebook">Facebook</option>
+                      <option value="x">X / Twitter</option>
+                      <option value="instagram">Instagram</option>
+                      <option value="website">Website</option>
+                      <option value="other">Other</option>
+                    </select>
+
+                    <input
+                      type="url"
+                      className="input text-xs py-1.5 flex-1"
+                      placeholder="https://..."
+                      value={s.url}
+                      onChange={(e) =>
+                        handleUpdateSocialLink(idx, "url", e.target.value)
+                      }
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveSocialLink(idx)}
+                      className="p-1.5 text-gray-400 hover:text-red-600 rounded-lg transition"
+                      title="Remove Link"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 9. Publish Immediately Toggle */}
+          <label className="flex items-center gap-2 cursor-pointer pt-2">
+            <input
+              type="checkbox"
+              checked={postingForm.publishNow}
+              onChange={(e) =>
+                setPostingForm({
+                  ...postingForm,
+                  publishNow: e.target.checked,
+                  status: e.target.checked ? "PUBLISHED" : "DRAFT",
+                })
+              }
+              className="rounded text-primary-600"
+            />
+            <span className="font-bold text-gray-800 text-xs">
+              Publish on Public Careers Board &amp; Telegram Immediately
+            </span>
+          </label>
+        </div>
+      </Modal>
+
+      {/* ── DELETE POSTING CONFIRMATION MODAL ─────────────────────────── */}
+      <Modal
+        open={Boolean(deleteConfirmPosting)}
+        onClose={() => setDeleteConfirmPosting(null)}
+        title="Delete Job Posting"
+        size="sm"
+        footer={
+          <div className="flex justify-end gap-2 w-full">
+            <button
+              className="btn-secondary text-xs"
+              onClick={() => setDeleteConfirmPosting(null)}
+              disabled={deletePostingMutation.isPending}
+            >
+              Cancel
+            </button>
+            <button
+              className="btn-danger text-xs"
+              onClick={() => deletePostingMutation.mutate(deleteConfirmPosting?.id)}
+              disabled={deletePostingMutation.isPending}
+            >
+              {deletePostingMutation.isPending ? "Deleting…" : "Delete Job"}
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-3 text-xs text-gray-600">
+          <p>
+            Are you sure you want to delete{" "}
+            <span className="font-bold text-gray-900">"{deleteConfirmPosting?.title}"</span>?
+          </p>
+          {deleteConfirmPosting?.telegramPostedAt && (
+            <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-lg text-blue-800 text-[11px]">
+              📢 <b>Telegram Channel Sync:</b> The announcement message in your Telegram channel will also be automatically deleted.
+            </div>
+          )}
+          <p className="text-gray-400 text-[11px]">
+            This action cannot be undone.
+          </p>
         </div>
       </Modal>
     </div>

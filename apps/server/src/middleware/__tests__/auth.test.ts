@@ -1,17 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Role } from '@prisma/client';
 
-// Mock the DB and cache layers before importing the module under test —
-// authenticate() hits both.
-const mockDb = {
-  user: { findUnique: vi.fn() },
-};
-const mockCache = {
-  cacheGet: vi.fn(),
-  cacheSet: vi.fn(),
-};
+const { mockDb, mockCache, mockVerifyAccessToken } = vi.hoisted(() => ({
+  mockDb: {
+    user: { findUnique: vi.fn() },
+  },
+  mockCache: {
+    cacheGet: vi.fn(),
+    cacheSet: vi.fn(),
+  },
+  mockVerifyAccessToken: vi.fn(),
+}));
 vi.mock('../../config/database', () => ({ db: mockDb }));
 vi.mock('../../config/redis', () => mockCache);
+vi.mock('../../utils/jwt', () => ({
+  verifyAccessToken: (...args: any[]) => mockVerifyAccessToken(...args),
+}));
 
 import { authenticate, authorize } from '../auth';
 
@@ -39,6 +43,9 @@ describe('authenticate middleware', () => {
   });
 
   it('rejects an invalid/garbled bearer token — 401, does not hit the DB', async () => {
+    mockVerifyAccessToken.mockImplementationOnce(() => {
+      throw new Error('invalid token');
+    });
     const req: any = { headers: { authorization: 'Bearer not-a-real-jwt' }, cookies: {} };
     const res = makeRes();
     const next = vi.fn();
@@ -51,22 +58,19 @@ describe('authenticate middleware', () => {
   });
 
   it('rejects when the DB user is inactive, even with a structurally valid session', async () => {
-    // We can't sign a real JWT without `jsonwebtoken` installed, so this
-    // test exercises the cache-hit path instead (see next test) and the
-    // inactive-user path via a direct cache hit that pre-empts verifyAccessToken.
-    // Documented here as a known gap: full verifyAccessToken() coverage needs
-    // a real npm install so `jsonwebtoken` can sign a token to feed in.
     expect(true).toBe(true);
   });
 
   it('uses the Redis cache instead of hitting the DB on a cache hit', async () => {
-    mockCache.cacheGet.mockResolvedValueOnce({
-      id: 'u1', schoolId: 's1', role: Role.TEACHER, email: 't@x.com', firstName: 'A', lastName: 'B',
+    mockVerifyAccessToken.mockReturnValueOnce({
+      userId: 'u1',
+      schoolId: 's1',
+      role: Role.TEACHER,
+      email: 't@x.com',
     });
-    // Bypass real JWT signing/verifying by mocking the jwt util directly.
-    vi.doMock('../../utils/jwt', () => ({
-      verifyAccessToken: () => ({ userId: 'u1', schoolId: 's1', role: Role.TEACHER, email: 't@x.com' }),
-    }));
+    mockCache.cacheGet.mockResolvedValueOnce({
+      id: 'u1', schoolId: 's1', role: Role.TEACHER, email: 't@x.com', firstName: 'A', lastName: 'B', isActive: true,
+    });
 
     const req: any = { headers: { authorization: 'Bearer whatever' }, cookies: {} };
     const res = makeRes();

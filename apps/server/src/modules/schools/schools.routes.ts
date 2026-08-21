@@ -7,6 +7,7 @@ import { sendSuccess } from "../../utils/response";
 import { authorize } from "../../middleware/auth";
 import { Role, MilestoneType } from "@prisma/client";
 import { getStudentPerformanceInsights } from "../academics/academics.service";
+import { recordAuditEvent } from "../../utils/auditLog";
 
 const router = Router();
 const isAdmin = [Role.ADMIN, Role.SUPER_ADMIN];
@@ -97,6 +98,19 @@ router.patch(
         where: { schoolId: req.user.schoolId },
         data,
       });
+
+      await recordAuditEvent({
+        schoolId: req.user.schoolId,
+        actorId: req.user.id,
+        actorEmail: req.user.email,
+        actorRole: req.user.role,
+        action: "SCHOOL_SETTINGS_UPDATED",
+        targetType: "SchoolSettings",
+        targetId: settings.id,
+        metadata: data,
+        req,
+      });
+
       sendSuccess(res, settings, "Settings updated");
     } catch (e) {
       next(e);

@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const mockDb = { school: { findUnique: vi.fn() } };
-const mockCache = { cacheGet: vi.fn(), cacheSet: vi.fn() };
+const { mockDb, mockCache } = vi.hoisted(() => ({
+  mockDb: { school: { findUnique: vi.fn() } },
+  mockCache: { cacheGet: vi.fn(), cacheSet: vi.fn() },
+}));
 vi.mock("../../config/database", () => ({ db: mockDb }));
 vi.mock("../../config/redis", () => mockCache);
 

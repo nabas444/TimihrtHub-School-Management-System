@@ -1,6 +1,7 @@
 import { RouterProvider } from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
+import { GoogleOAuthProvider } from '@react-oauth/google';
 import { Toaster } from 'react-hot-toast';
 import { router } from './routes';
 import { queryClient } from './lib/queryClient';
@@ -13,21 +14,25 @@ function SocketInitializer() {
 }
 
 export default function App() {
+  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+
   return (
-    <I18nProvider>
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-        <SocketInitializer />
-        <Toaster
-          position="top-right"
-          toastOptions={{
-            duration: 3500,
-            style: { borderRadius: '12px', fontSize: '14px', fontFamily: 'Inter, sans-serif' },
-            success: { iconTheme: { primary: '#4f46e5', secondary: '#fff' } },
-          }}
-        />
-        {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}
-      </QueryClientProvider>
-    </I18nProvider>
+    <GoogleOAuthProvider clientId={googleClientId}>
+      <I18nProvider>
+        <QueryClientProvider client={queryClient}>
+          <RouterProvider router={router} />
+          <SocketInitializer />
+          <Toaster
+            position="top-right"
+            toastOptions={{
+              duration: 3500,
+              style: { borderRadius: '12px', fontSize: '14px', fontFamily: 'Inter, sans-serif' },
+              success: { iconTheme: { primary: '#4f46e5', secondary: '#fff' } },
+            }}
+          />
+          {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}
+        </QueryClientProvider>
+      </I18nProvider>
+    </GoogleOAuthProvider>
   );
 }

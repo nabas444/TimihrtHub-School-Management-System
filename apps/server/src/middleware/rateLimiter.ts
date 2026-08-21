@@ -25,3 +25,12 @@ export const uploadLimiter = rateLimit({
   max: 20,
   message: { success: false, message: 'Upload limit reached, slow down.' },
 });
+
+// Admissions public application submission limiter (max 5 per hour per IP)
+export const admissionsLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many application submissions from this IP, please try again in an hour.' },
+});

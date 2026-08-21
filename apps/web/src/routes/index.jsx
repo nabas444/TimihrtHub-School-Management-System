@@ -136,8 +136,15 @@ const ParentsPage = lazy(() => import("../features/parents/ParentsPage"));
 const EmployeesPage = lazy(() => import("../features/hr/EmployeesPage"));
 const HRDashboardPage = lazy(() => import("../features/hr/HRDashboardPage"));
 const RecruitingPage = lazy(() => import("../features/recruiting/RecruitingPage"));
-const PublicJobBoardPage = lazy(() => import("../features/recruiting/PublicJobBoardPage"));
+const PublicJobBoardPage = lazy(() => import("../features/recruiting-public/JobBoardPage"));
+const JobPostingDetailPage = lazy(() => import("../features/recruiting-public/JobPostingDetailPage"));
 const LeavePage = lazy(() => import("../features/staff/LeavePage"));
+const PublicApplicationPage = lazy(
+  () => import("../features/admissions/PublicApplicationPage"),
+);
+const AdmissionsPage = lazy(
+  () => import("../features/admissions/AdmissionsPage"),
+);
 const CurriculumPage = lazy(() => import("../features/curriculum/CurriculumPage"));
 const PoliciesPage = lazy(() => import("../features/policies/PoliciesPage"));
 const PolicyDetailPage = lazy(() => import("../features/policies/PolicyDetailPage"));
@@ -146,7 +153,15 @@ const ProfilePage = lazy(() => import("../features/settings/ProfilePage"));
 const SchoolSettingsPage = lazy(
   () => import("../features/settings/SchoolSettingsPage"),
 );
+const AuditLogsPage = lazy(
+  () => import("../features/audit-logs/AuditLogsPage"),
+);
 const BillingPage = lazy(() => import("../features/billing/BillingPage"));
+const HostelDashboardPage = lazy(() => import("../features/hostel/HostelDashboardPage"));
+const HostelApplicationsPage = lazy(() => import("../features/hostel/HostelApplicationsPage"));
+const HostelDailyOpsPage = lazy(() => import("../features/hostel/HostelDailyOpsPage"));
+const HostelCarePage = lazy(() => import("../features/hostel/HostelCarePage"));
+const HostelPortalPage = lazy(() => import("../features/hostel/HostelPortalPage"));
 const NotFoundPage = lazy(() =>
   import("../pages/NotFoundPage").then((m) => ({ default: m.NotFoundPage })),
 );
@@ -238,6 +253,30 @@ export const router = createBrowserRouter([
     element: (
       <S>
         <PublicJobBoardPage />
+      </S>
+    ),
+  },
+  {
+    path: "/careers/:schoolSlug",
+    element: (
+      <S>
+        <PublicJobBoardPage />
+      </S>
+    ),
+  },
+  {
+    path: "/careers/:schoolSlug/:postingSlug",
+    element: (
+      <S>
+        <JobPostingDetailPage />
+      </S>
+    ),
+  },
+  {
+    path: "/apply/:schoolSlug",
+    element: (
+      <S>
+        <PublicApplicationPage />
       </S>
     ),
   },
@@ -503,10 +542,68 @@ export const router = createBrowserRouter([
         ),
       },
       {
+        path: "/admissions",
+        element: (
+          <S>
+            <AdminRoute>
+              <AdmissionsPage />
+            </AdminRoute>
+          </S>
+        ),
+      },
+      {
         path: "/fees",
         element: (
           <S>
             <FeesPage />
+          </S>
+        ),
+      },
+      {
+        path: "/hostel",
+        element: (
+          <S>
+            <StaffRoute>
+              <HostelDashboardPage />
+            </StaffRoute>
+          </S>
+        ),
+      },
+      {
+        path: "/hostel/applications",
+        element: (
+          <S>
+            <StaffRoute>
+              <HostelApplicationsPage />
+            </StaffRoute>
+          </S>
+        ),
+      },
+      {
+        path: "/hostel/daily-ops",
+        element: (
+          <S>
+            <StaffRoute>
+              <HostelDailyOpsPage />
+            </StaffRoute>
+          </S>
+        ),
+      },
+      {
+        path: "/hostel/care",
+        element: (
+          <S>
+            <StaffRoute>
+              <HostelCarePage />
+            </StaffRoute>
+          </S>
+        ),
+      },
+      {
+        path: "/hostel/my-room",
+        element: (
+          <S>
+            <HostelPortalPage />
           </S>
         ),
       },
@@ -820,6 +917,16 @@ export const router = createBrowserRouter([
           <S>
             <AdminRoute>
               <SchoolSettingsPage />
+            </AdminRoute>
+          </S>
+        ),
+      },
+      {
+        path: "/settings/audit-logs",
+        element: (
+          <S>
+            <AdminRoute>
+              <AuditLogsPage />
             </AdminRoute>
           </S>
         ),

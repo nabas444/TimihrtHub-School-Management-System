@@ -1,6 +1,7 @@
 {
   "nav": {
     "dashboard": "Gabatee Too'annoo",
+    "admissions": "Simannaa Barattootaa (Admissions)",
     "students": "Barattoota",
     "parents": "Warra fi Guddiftoota",
     "my_students": "Barattoota Koo",
@@ -56,6 +57,12 @@
     "recruiting_pipeline": "Qaxarrii fi Filannoo",
     "system_users": "Fayyadamtoota Sirnaa",
     "leave_requests": "Gaaffii Boqonnaa",
+    "hostel": "Mooraa Barattootaa (Hostel)",
+    "hostel_dashboard": "Kutaa fi Siree",
+    "hostel_applications": "Iyyata Mooraa",
+    "hostel_daily_ops": "Hojii Guyyaa fi Eeyyama",
+    "hostel_care": "Suphaa fi Nageenya",
+    "hostel_my_room": "Kutaa Koo fi Eeyyama Ba'uu",
     "files": "Faayilota",
     "resources": "Qabeenya",
     "curriculum": "Kariikulamii",
@@ -66,6 +73,7 @@
     "ai_tutor": "Barsiisaa AI",
     "profile": "Piroofaayilii",
     "school_config": "Qindaa'ina Mana Barumsaa",
+    "audit_logs": "Galmee Ooditii",
     "billing": "Kaffaltii Tajaajilaa",
     "section_overview": "Ilaalcha Waliigalaa",
     "section_academic": "Barnoota",

@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
-import { Role } from "@prisma/client";
+import { Role, AuthProvider } from "@prisma/client";
+import { OAuth2Client } from "google-auth-library";
 import { db } from "../../config/database";
 import { cacheDel } from "../../config/redis";
 import {
@@ -16,9 +17,12 @@ import {
   sendWelcomeEmail,
   sendPasswordResetEmail,
 } from "../../jobs/emailWorker";
+import { recordAuditEvent } from "../../utils/auditLog";
+import { Request } from "express";
 import * as UsersService from "../users/users.service";
 
 const SALT_ROUNDS = parseInt(process.env.BCRYPT_SALT_ROUNDS ?? "12");
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // ── Register a new school + first admin ─────────────────────────────────────
 export const registerSchool = async (data: {
@@ -105,6 +109,7 @@ export const login = async (
   email: string,
   password: string,
   schoolSlug?: string,
+  req?: Request,
 ) => {
   const whereClause = schoolSlug
     ? { email, school: { slug: schoolSlug } }
@@ -117,17 +122,78 @@ export const login = async (
     },
   });
 
-  if (!user) throw new AppError("Invalid email or password", 401);
-  if (!user.isActive)
+  if (!user) {
+    if (schoolSlug) {
+      const sch = await db.school.findFirst({ where: { slug: schoolSlug } });
+      if (sch) {
+        await recordAuditEvent({
+          schoolId: sch.id,
+          actorEmail: email,
+          action: "LOGIN_FAILED",
+          targetType: "User",
+          metadata: { reason: "User not found for email" },
+          req,
+        });
+      }
+    }
+    throw new AppError("Invalid email or password", 401);
+  }
+
+  if (!user.isActive) {
+    await recordAuditEvent({
+      schoolId: user.schoolId,
+      actorId: user.id,
+      actorEmail: user.email,
+      actorRole: user.role,
+      action: "LOGIN_FAILED",
+      targetType: "User",
+      targetId: user.id,
+      metadata: { reason: "Account is disabled" },
+      req,
+    });
     throw new AppError(
       "Account is disabled. Contact school administration.",
       403,
     );
-  if (!user.school.isActive)
+  }
+
+  if (!user.school.isActive) {
+    await recordAuditEvent({
+      schoolId: user.schoolId,
+      actorId: user.id,
+      actorEmail: user.email,
+      actorRole: user.role,
+      action: "LOGIN_FAILED",
+      targetType: "User",
+      targetId: user.id,
+      metadata: { reason: "School account is inactive" },
+      req,
+    });
     throw new AppError("School account is inactive.", 403);
+  }
+
+  if (!user.password) {
+    throw new AppError(
+      "This account uses Google Sign-In. Use the Google button to log in.",
+      400,
+    );
+  }
 
   const valid = await bcrypt.compare(password, user.password);
-  if (!valid) throw new AppError("Invalid email or password", 401);
+  if (!valid) {
+    await recordAuditEvent({
+      schoolId: user.schoolId,
+      actorId: user.id,
+      actorEmail: user.email,
+      actorRole: user.role,
+      action: "LOGIN_FAILED",
+      targetType: "User",
+      targetId: user.id,
+      metadata: { reason: "Invalid password" },
+      req,
+    });
+    throw new AppError("Invalid email or password", 401);
+  }
 
   // Generate tokens
   const payload = {
@@ -155,10 +221,179 @@ export const login = async (
     data: { lastLoginAt: new Date() },
   });
 
+  // Log successful login
+  await recordAuditEvent({
+    schoolId: user.schoolId,
+    actorId: user.id,
+    actorEmail: user.email,
+    actorRole: user.role,
+    action: "LOGIN_SUCCESS",
+    targetType: "User",
+    targetId: user.id,
+    metadata: { authProvider: "LOCAL" },
+    req,
+  });
+
   return {
     accessToken,
     refreshToken,
     // Return full user profile so front-end has teacher/student relations
+    user: await UsersService.getUserById(user.id, user.schoolId),
+  };
+};
+
+// ── Google OAuth Login ───────────────────────────────────────────────────────
+export const googleLogin = async (credential: string, req?: Request) => {
+  let payload;
+  try {
+    const ticket = await googleClient.verifyIdToken({
+      idToken: credential,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    payload = ticket.getPayload();
+  } catch (err: any) {
+    throw new AppError("Invalid or expired Google token", 401);
+  }
+
+  if (!payload || !payload.email) {
+    throw new AppError("Invalid Google credential payload", 401);
+  }
+
+  const email = payload.email.toLowerCase();
+  const googleId = payload.sub;
+
+  // 1. Look up user by email (read-only)
+  const user = await db.user.findFirst({
+    where: { email },
+    include: {
+      school: { select: { id: true, name: true, slug: true, isActive: true } },
+    },
+  });
+
+  if (!user) {
+    throw new AppError(
+      "No account found for this email. Contact your school administrator to be added first.",
+      403,
+    );
+  }
+
+  // 2. ROLE CHECK — Admin/SuperAdmin must not sign in via Google
+  if (user.role === Role.ADMIN || user.role === Role.SUPER_ADMIN) {
+    await recordAuditEvent({
+      schoolId: user.schoolId,
+      actorId: user.id,
+      actorEmail: user.email,
+      actorRole: user.role,
+      action: "GOOGLE_SIGNIN_BLOCKED_ADMIN",
+      targetType: "User",
+      targetId: user.id,
+      metadata: { role: user.role },
+      req,
+    });
+
+    throw new AppError(
+      "Admin accounts must sign in with email and password. Google Sign-In is not available for this role.",
+      403,
+    );
+  }
+
+  if (!user.isActive) {
+    await recordAuditEvent({
+      schoolId: user.schoolId,
+      actorId: user.id,
+      actorEmail: user.email,
+      actorRole: user.role,
+      action: "LOGIN_FAILED",
+      targetType: "User",
+      targetId: user.id,
+      metadata: { reason: "Account is disabled" },
+      req,
+    });
+
+    throw new AppError(
+      "Account is disabled. Contact school administration.",
+      403,
+    );
+  }
+
+  if (!user.school.isActive) {
+    await recordAuditEvent({
+      schoolId: user.schoolId,
+      actorId: user.id,
+      actorEmail: user.email,
+      actorRole: user.role,
+      action: "LOGIN_FAILED",
+      targetType: "User",
+      targetId: user.id,
+      metadata: { reason: "School account is inactive" },
+      req,
+    });
+
+    throw new AppError("School account is inactive.", 403);
+  }
+
+  // 3. Link Google account if not linked yet
+  if (!user.googleId) {
+    await db.user.update({
+      where: { id: user.id },
+      data: {
+        googleId,
+        isEmailVerified: true,
+      },
+    });
+
+    await recordAuditEvent({
+      schoolId: user.schoolId,
+      actorId: user.id,
+      actorEmail: user.email,
+      actorRole: user.role,
+      action: "GOOGLE_ACCOUNT_LINKED",
+      targetType: "User",
+      targetId: user.id,
+      metadata: { googleId },
+      req,
+    });
+  }
+
+  // 4. Generate tokens & login
+  const tokenPayload = {
+    userId: user.id,
+    schoolId: user.schoolId,
+    role: user.role,
+    email: user.email,
+  };
+
+  const accessToken = signAccessToken(tokenPayload);
+  const refreshToken = signRefreshToken(tokenPayload);
+
+  await db.refreshToken.create({
+    data: {
+      userId: user.id,
+      token: refreshToken,
+      expiresAt: getRefreshTokenExpiry(),
+    },
+  });
+
+  await db.user.update({
+    where: { id: user.id },
+    data: { lastLoginAt: new Date() },
+  });
+
+  await recordAuditEvent({
+    schoolId: user.schoolId,
+    actorId: user.id,
+    actorEmail: user.email,
+    actorRole: user.role,
+    action: "LOGIN_SUCCESS",
+    targetType: "User",
+    targetId: user.id,
+    metadata: { authProvider: "GOOGLE" },
+    req,
+  });
+
+  return {
+    accessToken,
+    refreshToken,
     user: await UsersService.getUserById(user.id, user.schoolId),
   };
 };
@@ -195,7 +430,16 @@ export const refreshTokens = async (token: string) => {
 };
 
 // ── Logout ───────────────────────────────────────────────────────────────────
-export const logout = async (userId: string, refreshToken?: string) => {
+export const logout = async (
+  userId: string,
+  refreshToken?: string,
+  req?: Request,
+) => {
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: { id: true, schoolId: true, email: true, role: true },
+  });
+
   if (refreshToken) {
     await db.refreshToken.deleteMany({ where: { token: refreshToken } });
   } else {
@@ -204,6 +448,19 @@ export const logout = async (userId: string, refreshToken?: string) => {
   }
   // Clear user cache
   await cacheDel(`user:${userId}`);
+
+  if (user) {
+    await recordAuditEvent({
+      schoolId: user.schoolId,
+      actorId: user.id,
+      actorEmail: user.email,
+      actorRole: user.role,
+      action: "LOGOUT",
+      targetType: "User",
+      targetId: user.id,
+      req,
+    });
+  }
 };
 
 // ── Request password reset ───────────────────────────────────────────────────
@@ -258,9 +515,17 @@ export const changePassword = async (
   userId: string,
   currentPassword: string,
   newPassword: string,
+  req?: Request,
 ) => {
   const user = await db.user.findUnique({ where: { id: userId } });
   if (!user) throw new AppError("User not found", 404);
+
+  if (!user.password) {
+    throw new AppError(
+      "This account uses Google Sign-In and does not have a local password set.",
+      400,
+    );
+  }
 
   const valid = await bcrypt.compare(currentPassword, user.password);
   if (!valid) throw new AppError("Current password is incorrect", 400);
@@ -268,4 +533,15 @@ export const changePassword = async (
   const hashed = await bcrypt.hash(newPassword, SALT_ROUNDS);
   await db.user.update({ where: { id: userId }, data: { password: hashed } });
   await cacheDel(`user:${userId}`);
+
+  await recordAuditEvent({
+    schoolId: user.schoolId,
+    actorId: user.id,
+    actorEmail: user.email,
+    actorRole: user.role,
+    action: "PASSWORD_CHANGED",
+    targetType: "User",
+    targetId: user.id,
+    req,
+  });
 };

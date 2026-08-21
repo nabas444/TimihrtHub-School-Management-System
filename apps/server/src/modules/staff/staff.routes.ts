@@ -7,6 +7,7 @@ import { emitToUser } from "../../config/socket";
 import { sendSuccess, sendCreated, paginationMeta } from "../../utils/response";
 import { authorize } from "../../middleware/auth";
 import { Role } from "@prisma/client";
+import { recordAuditEvent } from "../../utils/auditLog";
 
 const router = Router();
 const isAdmin = [Role.ADMIN, Role.SUPER_ADMIN];
@@ -319,6 +320,25 @@ router.post(
         },
         create: { ...data, netPay },
       });
+
+      await recordAuditEvent({
+        schoolId: req.user.schoolId,
+        actorId: req.user.id,
+        actorEmail: req.user.email,
+        actorRole: req.user.role,
+        action: "PAYROLL_UPDATED",
+        targetType: "PayrollRecord",
+        targetId: record.id,
+        metadata: {
+          teacherProfileId: data.teacherProfileId,
+          month: data.month,
+          year: data.year,
+          baseSalary: data.baseSalary,
+          netPay,
+        },
+        req,
+      });
+
       sendCreated(res, record, "Payroll recorded");
     } catch (e) {
       next(e);

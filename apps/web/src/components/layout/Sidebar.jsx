@@ -35,6 +35,9 @@ import {
   Award,
   HeartHandshake,
   Shield,
+  UserPlus,
+  ScrollText,
+  Building2,
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -91,6 +94,7 @@ const NAV_CONFIG = {
     {
       section: "nav.section_management",
       items: [
+        { to: "/admissions", icon: UserPlus, label: "nav.admissions" },
         {
           icon: Sparkles,
           label: "nav.clubs",
@@ -135,6 +139,16 @@ const NAV_CONFIG = {
         },
         { to: "/files", icon: FileText, label: "nav.files" },
         { to: "/policies", icon: Shield, label: "nav.policies" },
+        {
+          icon: Building2,
+          label: "nav.hostel",
+          children: [
+            { to: "/hostel", label: "nav.hostel_dashboard" },
+            { to: "/hostel/applications", label: "nav.hostel_applications" },
+            { to: "/hostel/daily-ops", label: "nav.hostel_daily_ops" },
+            { to: "/hostel/care", label: "nav.hostel_care" },
+          ],
+        },
         { to: "/ai", icon: Brain, label: "nav.ai_insights" },
       ],
     },
@@ -143,6 +157,7 @@ const NAV_CONFIG = {
       items: [
         { to: "/settings/profile", icon: Settings, label: "nav.profile" },
         { to: "/settings/school", icon: UserCog, label: "nav.school_config" },
+        { to: "/settings/audit-logs", icon: ScrollText, label: "nav.audit_logs" },
         { to: "/settings/billing", icon: CreditCard, label: "nav.billing" },
       ],
     },
@@ -218,6 +233,14 @@ const NAV_CONFIG = {
         { to: "/files", icon: FileText, label: "nav.files" },
         { to: "/policies", icon: Shield, label: "nav.policies" },
         { to: "/library", icon: Library, label: "nav.library" },
+        {
+          icon: Building2,
+          label: "nav.hostel",
+          children: [
+            { to: "/hostel", label: "nav.hostel_dashboard" },
+            { to: "/hostel/daily-ops", label: "nav.hostel_daily_ops" },
+          ],
+        },
         {
           to: "/staff/leave",
           icon: CalendarCheck,
@@ -314,6 +337,7 @@ const NAV_CONFIG = {
         { to: "/files", icon: FileText, label: "nav.resources" },
         { to: "/policies", icon: Shield, label: "nav.policies_acknowledgments" },
         { to: "/library", icon: Library, label: "nav.library" },
+        { to: "/hostel/my-room", icon: Building2, label: "nav.hostel_my_room" },
         { to: "/fees", icon: DollarSign, label: "nav.my_fees" },
         { to: "/ai", icon: Brain, label: "nav.ai_tutor" },
       ],
@@ -372,6 +396,7 @@ const NAV_CONFIG = {
       section: "nav.section_admin",
       items: [
         { to: "/fees", icon: DollarSign, label: "nav.fees_payments" },
+        { to: "/hostel/my-room", icon: Building2, label: "nav.hostel_my_room" },
         { to: "/policies", icon: Shield, label: "nav.policies_acknowledgments" },
       ],
     },

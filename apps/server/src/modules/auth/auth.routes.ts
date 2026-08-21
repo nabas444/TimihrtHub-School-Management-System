@@ -8,6 +8,7 @@ const router = Router();
 // Public routes
 router.post('/register', authLimiter, AuthController.register);
 router.post('/login', authLimiter, AuthController.login);
+router.post('/google', authLimiter, AuthController.googleLogin);
 router.post('/refresh', AuthController.refresh);
 router.post('/password/request-reset', authLimiter, AuthController.requestPasswordReset);
 router.post('/password/reset', AuthController.resetPassword);

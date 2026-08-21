@@ -189,6 +189,7 @@ const createParentSchema = z.object({
   relation: z.string().optional().nullable(), // Father | Mother | Guardian
   annualIncome: z.string().optional().nullable(),
   education: z.string().optional().nullable(),
+  avatar: z.string().optional().nullable(),
   linkedStudentIds: z.array(z.string().uuid()).optional(),
 });
 
@@ -227,6 +228,7 @@ router.post(
             gender: data.gender || null,
             address: data.address || null,
             city: data.city || null,
+            avatar: data.avatar || null,
             isActive: true,
           },
         });
@@ -280,6 +282,7 @@ const updateParentSchema = z.object({
   relation: z.string().optional().nullable(),
   annualIncome: z.string().optional().nullable(),
   education: z.string().optional().nullable(),
+  avatar: z.string().optional().nullable(),
   isActive: z.boolean().optional(),
 });
 
@@ -309,6 +312,7 @@ router.patch(
             ...(data.gender !== undefined && { gender: data.gender }),
             ...(data.address !== undefined && { address: data.address || null }),
             ...(data.city !== undefined && { city: data.city || null }),
+            ...(data.avatar !== undefined && { avatar: data.avatar || null }),
             ...(data.isActive !== undefined && { isActive: data.isActive }),
           },
         });

@@ -3358,5 +3358,480 @@ export async function generateJobOfferLetterPdf(
   return Buffer.from(await doc.save());
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 19. JOB POSTING MARKETING FLYER (PDF)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface JobPostingFlyerData {
+  title: string;
+  slug: string;
+  companyTagline?: string | null;
+  employmentType?: string | null;
+  location?: string | null;
+  description: string;
+  requirements?: string | null;
+  benefits?: string | null;
+  salaryType?: "FIXED" | "NEGOTIABLE" | "RANGE" | "UNDISCLOSED" | string | null;
+  salaryRange?: string | null;
+  salaryFixedAmount?: number | null;
+  salaryCurrency?: string | null;
+  closingDate?: Date | string | null;
+  applicationDeadlineNote?: string | null;
+  socialLinks?: Array<{ platform: string; url: string; label?: string }> | any | null;
+  bannerImageUrl?: string | null;
+  contactEmail?: string | null;
+  contactPhone?: string | null;
+  department?: string | null;
+  position?: string | null;
+}
+
+export async function generateJobPostingFlyerPdf(
+  school: SchoolHeader & { logo?: string | null },
+  posting: JobPostingFlyerData,
+  publicUrl: string,
+): Promise<Buffer> {
+  const { doc, font, bold } = await newDoc();
+  let page = doc.addPage([PAGE.width, PAGE.height]);
+  let { width, height } = page.getSize();
+  const margin = 40;
+  const contentWidth = width - margin * 2;
+
+  // Helper for multi-page overflow
+  const ensureSpace = (needed: number) => {
+    if (y - needed < 70) {
+      page = doc.addPage([PAGE.width, PAGE.height]);
+      y = height - 50;
+      // Draw minimal top banner on continuation page
+      page.drawRectangle({
+        x: 0,
+        y: height - 35,
+        width,
+        height: 35,
+        color: COLOR.navy,
+      });
+      page.drawText(`${school.name} — ${posting.title}`, {
+        x: margin,
+        y: height - 24,
+        size: 9,
+        font: bold,
+        color: COLOR.white,
+      });
+      y = height - 60;
+    }
+  };
+
+  // Helper to wrap text into lines
+  const wrapText = (text: string, maxWidth: number, fontSize: number, useFont = font) => {
+    const lines: string[] = [];
+    const paragraphs = text.split("\n");
+    for (const paragraph of paragraphs) {
+      if (!paragraph.trim()) {
+        lines.push("");
+        continue;
+      }
+      const words = paragraph.split(" ");
+      let currentLine = "";
+      for (const word of words) {
+        const testLine = currentLine ? `${currentLine} ${word}` : word;
+        const testWidth = useFont.widthOfTextAtSize(testLine, fontSize);
+        if (testWidth > maxWidth && currentLine) {
+          lines.push(currentLine);
+          currentLine = word;
+        } else {
+          currentLine = testLine;
+        }
+      }
+      if (currentLine) lines.push(currentLine);
+    }
+    return lines;
+  };
+
+  // 1. Top Header Banner
+  page.drawRectangle({
+    x: 0,
+    y: height - 90,
+    width,
+    height: 90,
+    color: COLOR.navy,
+  });
+
+  page.drawText(school.name.toUpperCase(), {
+    x: margin,
+    y: height - 38,
+    size: 18,
+    font: bold,
+    color: COLOR.white,
+  });
+
+  const contactLine = [
+    school.address,
+    school.phone || posting.contactPhone,
+    school.email || posting.contactEmail,
+  ]
+    .filter(Boolean)
+    .join("  ·  ");
+
+  if (contactLine) {
+    page.drawText(contactLine, {
+      x: margin,
+      y: height - 55,
+      size: 8.5,
+      font,
+      color: rgb(0.85, 0.88, 0.93),
+    });
+  }
+
+  page.drawText("CAREER OPPORTUNITY — WE ARE HIRING", {
+    x: margin,
+    y: height - 76,
+    size: 10,
+    font: bold,
+    color: rgb(0.95, 0.77, 0.06), // Gold accent
+  });
+
+  let y = height - 105;
+
+  // 2. Banner Image (if available)
+  if (posting.bannerImageUrl) {
+    try {
+      const imgRes = await fetch(posting.bannerImageUrl);
+      if (imgRes.ok) {
+        const imgBytes = await imgRes.arrayBuffer();
+        let embeddedImg: any;
+        const contentType = imgRes.headers.get("content-type") || "";
+        if (contentType.includes("png") || posting.bannerImageUrl.toLowerCase().endsWith(".png")) {
+          embeddedImg = await doc.embedPng(imgBytes);
+        } else {
+          embeddedImg = await doc.embedJpg(imgBytes);
+        }
+        if (embeddedImg) {
+          const bannerHeight = 110;
+          page.drawImage(embeddedImg, {
+            x: margin,
+            y: y - bannerHeight,
+            width: contentWidth,
+            height: bannerHeight,
+          });
+          y -= bannerHeight + 15;
+        }
+      }
+    } catch {
+      // Gracefully continue without banner image
+    }
+  }
+
+  // 3. Job Title & Tagline Box
+  y -= 5;
+  page.drawRectangle({
+    x: margin,
+    y: y - 55,
+    width: contentWidth,
+    height: 55,
+    color: rgb(0.96, 0.97, 0.99),
+    borderColor: rgb(0.85, 0.88, 0.93),
+    borderWidth: 1,
+  });
+
+  page.drawText(posting.title, {
+    x: margin + 14,
+    y: y - 24,
+    size: 15,
+    font: bold,
+    color: COLOR.navy,
+  });
+
+  if (posting.companyTagline) {
+    page.drawText(posting.companyTagline, {
+      x: margin + 14,
+      y: y - 42,
+      size: 9.5,
+      font,
+      color: rgb(0.3, 0.35, 0.45),
+    });
+  }
+
+  y -= 70;
+
+  // 4. Key Details Row (Badges / Info Strip)
+  const salaryDisplay = (() => {
+    if (posting.salaryType === "FIXED") {
+      const cur = posting.salaryCurrency || "USD";
+      return `${posting.salaryFixedAmount?.toLocaleString()} ${cur}`;
+    }
+    if (posting.salaryType === "RANGE") {
+      return posting.salaryRange || "Competitive";
+    }
+    if (posting.salaryType === "NEGOTIABLE") {
+      return "Negotiable";
+    }
+    return "Undisclosed";
+  })();
+
+  const keyFacts = [
+    `Type: ${posting.employmentType?.replace(/_/g, " ") || "Full-Time"}`,
+    `Location: ${posting.location || "Campus"}`,
+    ...(posting.salaryType !== "UNDISCLOSED" ? [`Salary: ${salaryDisplay}`] : []),
+    ...(posting.closingDate
+      ? [`Deadline: ${new Date(posting.closingDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`]
+      : []),
+  ];
+
+  page.drawRectangle({
+    x: margin,
+    y: y - 24,
+    width: contentWidth,
+    height: 24,
+    color: COLOR.lightGray,
+  });
+
+  page.drawText(keyFacts.join("    |    "), {
+    x: margin + 10,
+    y: y - 16,
+    size: 8.5,
+    font: bold,
+    color: COLOR.navy,
+  });
+
+  y -= 40;
+
+  // 5. Job Description Section
+  ensureSpace(60);
+  page.drawText("ABOUT THE ROLE & RESPONSIBILITIES", {
+    x: margin,
+    y,
+    size: 10.5,
+    font: bold,
+    color: COLOR.navy,
+  });
+  page.drawLine({
+    start: { x: margin, y: y - 4 },
+    end: { x: margin + contentWidth, y: y - 4 },
+    thickness: 1,
+    color: rgb(0.85, 0.88, 0.93),
+  });
+  y -= 18;
+
+  const descLines = wrapText(posting.description, contentWidth, 8.5, font);
+  for (const line of descLines) {
+    ensureSpace(14);
+    if (!line) {
+      y -= 6;
+      continue;
+    }
+    page.drawText(line, {
+      x: margin,
+      y,
+      size: 8.5,
+      font,
+      color: rgb(0.2, 0.2, 0.2),
+    });
+    y -= 12.5;
+  }
+
+  y -= 10;
+
+  // 6. Requirements Section (if present)
+  if (posting.requirements) {
+    ensureSpace(50);
+    page.drawText("QUALIFICATIONS & REQUIREMENTS", {
+      x: margin,
+      y,
+      size: 10.5,
+      font: bold,
+      color: COLOR.navy,
+    });
+    page.drawLine({
+      start: { x: margin, y: y - 4 },
+      end: { x: margin + contentWidth, y: y - 4 },
+      thickness: 1,
+      color: rgb(0.85, 0.88, 0.93),
+    });
+    y -= 18;
+
+    const reqLines = wrapText(posting.requirements, contentWidth, 8.5, font);
+    for (const line of reqLines) {
+      ensureSpace(14);
+      if (!line) {
+        y -= 6;
+        continue;
+      }
+      page.drawText(line, {
+        x: margin,
+        y,
+        size: 8.5,
+        font,
+        color: rgb(0.2, 0.2, 0.2),
+      });
+      y -= 12.5;
+    }
+    y -= 10;
+  }
+
+  // 7. Benefits Section (if present)
+  if (posting.benefits) {
+    ensureSpace(45);
+    page.drawText("WHAT WE OFFER / BENEFITS", {
+      x: margin,
+      y,
+      size: 10.5,
+      font: bold,
+      color: COLOR.navy,
+    });
+    page.drawLine({
+      start: { x: margin, y: y - 4 },
+      end: { x: margin + contentWidth, y: y - 4 },
+      thickness: 1,
+      color: rgb(0.85, 0.88, 0.93),
+    });
+    y -= 18;
+
+    const benefitLines = wrapText(posting.benefits, contentWidth, 8.5, font);
+    for (const line of benefitLines) {
+      ensureSpace(14);
+      if (!line) {
+        y -= 6;
+        continue;
+      }
+      page.drawText(line, {
+        x: margin,
+        y,
+        size: 8.5,
+        font,
+        color: rgb(0.2, 0.2, 0.2),
+      });
+      y -= 12.5;
+    }
+    y -= 15;
+  }
+
+  // 8. Application & QR Code Call-to-Action Box
+  ensureSpace(120);
+  const qrBoxHeight = 95;
+  page.drawRectangle({
+    x: margin,
+    y: y - qrBoxHeight,
+    width: contentWidth,
+    height: qrBoxHeight,
+    color: rgb(0.94, 0.96, 0.99),
+    borderColor: COLOR.navy,
+    borderWidth: 1.2,
+  });
+
+  // Generate QR Code PNG Buffer
+  try {
+    let QRCode: any;
+    try {
+      QRCode = require("qrcode");
+    } catch {
+      QRCode = (await import("qrcode")).default || (await import("qrcode"));
+    }
+    const qrDataUrl = await QRCode.toDataURL(publicUrl, {
+      margin: 1,
+      width: 200,
+      color: {
+        dark: "#1e3a8a", // Navy
+        light: "#f1f5f9",
+      },
+    });
+    const base64Data = qrDataUrl.replace(/^data:image\/png;base64,/, "");
+    const qrBuffer = Buffer.from(base64Data, "base64");
+    const embeddedQr = await doc.embedPng(qrBuffer);
+
+    const qrSize = 75;
+    page.drawImage(embeddedQr, {
+      x: margin + 12,
+      y: y - qrBoxHeight + 10,
+      width: qrSize,
+      height: qrSize,
+    });
+  } catch {
+    // Fallback if QR fails: Draw placeholder text
+    page.drawText("[ QR Code ]", {
+      x: margin + 20,
+      y: y - qrBoxHeight + 40,
+      size: 9,
+      font: bold,
+      color: COLOR.gray,
+    });
+  }
+
+  // Text inside CTA box
+  const ctaX = margin + 98;
+  page.drawText("HOW TO APPLY", {
+    x: ctaX,
+    y: y - 22,
+    size: 11,
+    font: bold,
+    color: COLOR.navy,
+  });
+
+  page.drawText("Scan the QR code with your mobile camera or visit the link below to apply online:", {
+    x: ctaX,
+    y: y - 38,
+    size: 8,
+    font,
+    color: rgb(0.2, 0.25, 0.35),
+  });
+
+  page.drawText(publicUrl, {
+    x: ctaX,
+    y: y - 52,
+    size: 8.5,
+    font: bold,
+    color: rgb(0.1, 0.4, 0.7),
+  });
+
+  if (posting.applicationDeadlineNote) {
+    page.drawText(`Note: ${posting.applicationDeadlineNote}`, {
+      x: ctaX,
+      y: y - 68,
+      size: 7.5,
+      font,
+      color: COLOR.red,
+    });
+  } else if (posting.contactEmail || school.email) {
+    page.drawText(`Inquiries: ${posting.contactEmail || school.email}`, {
+      x: ctaX,
+      y: y - 68,
+      size: 7.5,
+      font,
+      color: COLOR.gray,
+    });
+  }
+
+  y -= qrBoxHeight + 15;
+
+  // 9. Social Links & Footer
+  if (Array.isArray(posting.socialLinks) && posting.socialLinks.length > 0) {
+    ensureSpace(35);
+    const socialText = posting.socialLinks
+      .map((s: any) => `${s.platform.toUpperCase()}: ${s.url}`)
+      .join("   ·   ");
+    const socialLines = wrapText(`Connect: ${socialText}`, contentWidth, 7, font);
+    for (const sLine of socialLines) {
+      page.drawText(sLine, {
+        x: margin,
+        y,
+        size: 7,
+        font,
+        color: COLOR.gray,
+      });
+      y -= 9;
+    }
+  }
+
+  // Bottom watermark footer
+  page.drawText(`Generated by TimhirtHub School System  ·  ${new Date().toLocaleDateString()}`, {
+    x: margin,
+    y: 20,
+    size: 7,
+    font,
+    color: rgb(0.6, 0.6, 0.6),
+  });
+
+  return Buffer.from(await doc.save());
+}
+
+
 
 

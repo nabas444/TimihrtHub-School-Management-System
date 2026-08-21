@@ -469,35 +469,37 @@ export async function runDeadlineEngineCycle() {
       // 4. POLICY SCHEDULED REVIEW DUE REMINDERS
       // ─────────────────────────────────────────────────────────────
       try {
-        const expiringPolicies: any[] = await db.$queryRawUnsafe(
-          `
-          SELECT
-            p.id,
-            p.title,
-            p.category,
-            p.next_review_date,
-            p.owner_id,
-            u."firstName",
-            u."lastName"
-          FROM policies p
-          JOIN users u ON p.owner_id = u.id
-          WHERE p.school_id = $1
-            AND p.status = 'PUBLISHED'
-            AND p.next_review_date IS NOT NULL
-            AND p.next_review_date <= (NOW() + INTERVAL '30 days')
-        `,
-          school.id,
-        );
+        const thirtyDaysFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+        const expiringPolicies = await (db as any).policy.findMany({
+          where: {
+            schoolId: school.id,
+            status: "PUBLISHED",
+            nextReviewDate: {
+              not: null,
+              lte: thirtyDaysFromNow,
+            },
+          },
+          include: {
+            owner: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+              },
+            },
+          },
+        });
 
         for (const policy of expiringPolicies) {
-          const reviewDate = new Date(policy.next_review_date);
+          if (!policy.nextReviewDate) continue;
+          const reviewDate = new Date(policy.nextReviewDate);
           const evalPolicy = evaluateDeadline(reviewDate, timezone);
           const taskId = `POLICY_REVIEW_${policy.id}`;
 
           if (evalPolicy.status === "OVERDUE") {
             await dispatchDeadlineNotification({
               schoolId: school.id,
-              userId: policy.owner_id,
+              userId: policy.ownerId,
               type: NotificationType.POLICY,
               priority: "URGENT",
               title: "🔴 Policy Review Overdue",
@@ -510,7 +512,7 @@ export async function runDeadlineEngineCycle() {
           } else if (evalPolicy.daysRemaining <= 30) {
             await dispatchDeadlineNotification({
               schoolId: school.id,
-              userId: policy.owner_id,
+              userId: policy.ownerId,
               type: NotificationType.POLICY,
               priority: "IMPORTANT",
               title: "🟡 Policy Review Approaching",

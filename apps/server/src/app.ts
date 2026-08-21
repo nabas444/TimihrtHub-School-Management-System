@@ -50,6 +50,9 @@ import { protectedRecruitingRouter as recruitingRoutes, publicRecruitingRouter }
 import parentRoutes from "./modules/parents/parents.routes";
 import curriculumRoutes from "./modules/curriculum/curriculum.routes";
 import policyRoutes, { publicPoliciesRouter } from "./modules/policies/policies.routes";
+import { protectedAdmissionsRouter as admissionsRoutes, publicAdmissionsRouter } from "./modules/admissions/admissions.routes";
+import auditLogRoutes from "./modules/audit-logs/audit-logs.routes";
+import hostelRoutes from "./modules/hostel/hostel.routes";
 
 // ── Background job workers ───────────────────────────────────────────────────
 // Importing these starts their BullMQ Worker instances (side effect on import).
@@ -57,6 +60,7 @@ import policyRoutes, { publicPoliciesRouter } from "./modules/policies/policies.
 // import them first — so it's obvious the queue consumers are actually running.
 import "./jobs/emailWorker";
 import "./jobs/notifWorker";
+import "./jobs/telegramWorker";
 import { startDeadlineEngine } from "./jobs/deadlineEngine";
 
 const app = express();
@@ -136,11 +140,14 @@ app.get("/", (_, res) => {
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/recruiting/public", publicRecruitingRouter);
 app.use("/api/v1/policies/public", publicPoliciesRouter);
+app.use("/api/v1/admissions/public", publicAdmissionsRouter);
 
 // Protected (auth + tenant guard applied globally)
 app.use("/api/v1", authenticate, tenantGuard);
 
 // Protected route modules
+app.use("/api/v1/audit-logs", auditLogRoutes);
+app.use("/api/v1/admissions", admissionsRoutes);
 app.use("/api/v1/users", userRoutes);
 app.use("/api/v1/schools", schoolRoutes);
 app.use("/api/v1/academics", academicsRoutes);
@@ -181,6 +188,7 @@ app.use("/api/v1/curriculum-standards", curriculumRoutes);
 app.use("/api/v1/curriculum-units", curriculumRoutes);
 app.use("/api/v1/policies", policyRoutes);
 app.use("/api/v1/policy-versions", policyRoutes);
+app.use("/api/v1/hostels", hostelRoutes);
 
 // ── 404 + Error handlers ─────────────────────────────────────────────────────
 app.use(notFoundHandler);

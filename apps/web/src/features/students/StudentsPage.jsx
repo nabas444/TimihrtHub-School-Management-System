@@ -46,11 +46,13 @@ import {
 import Modal from "../../components/ui/Modal";
 import PageLoader from "../../components/ui/PageLoader";
 import LookupSelect from "../../components/shared/LookupSelect";
+import PhotoUploadInput from "../../components/shared/PhotoUploadInput";
 import { useAuthStore } from "../../store/authStore";
 import clsx from "clsx";
 import toast from "react-hot-toast";
 
 const initialFormState = {
+  avatar: "",
   firstName: "",
   middleName: "",
   lastName: "",
@@ -72,10 +74,12 @@ const initialFormState = {
   fatherMiddleName: "",
   fatherLastName: "",
   fatherMobile: "",
+  fatherPhoto: "",
   motherFirstName: "",
   motherMiddleName: "",
   motherLastName: "",
   motherMobile: "",
+  motherPhoto: "",
   landline: "",
 
   // Classification & Program
@@ -136,6 +140,7 @@ export default function StudentsPage() {
   const buildStudentCreatePayload = () => {
     const payload = {
       role: "STUDENT",
+      avatar: form.avatar || undefined,
       firstName: form.firstName.trim(),
       middleName: form.middleName?.trim() || undefined,
       lastName: form.lastName.trim(),
@@ -172,10 +177,12 @@ export default function StudentsPage() {
       fatherMiddleName: form.fatherMiddleName?.trim() || undefined,
       fatherLastName: form.fatherLastName?.trim() || undefined,
       fatherMobile: form.fatherMobile?.trim() || undefined,
+      fatherPhoto: form.fatherPhoto || undefined,
       motherFirstName: form.motherFirstName?.trim() || undefined,
       motherMiddleName: form.motherMiddleName?.trim() || undefined,
       motherLastName: form.motherLastName?.trim() || undefined,
       motherMobile: form.motherMobile?.trim() || undefined,
+      motherPhoto: form.motherPhoto || undefined,
       landline: form.landline?.trim() || undefined,
 
       religionId: form.religionId || undefined,
@@ -195,6 +202,7 @@ export default function StudentsPage() {
 
   const buildStudentUpdatePayload = () => {
     const payload = {
+      avatar: form.avatar || null,
       firstName: form.firstName.trim(),
       middleName: form.middleName?.trim() || null,
       lastName: form.lastName.trim(),
@@ -229,10 +237,12 @@ export default function StudentsPage() {
       fatherMiddleName: form.fatherMiddleName?.trim() || null,
       fatherLastName: form.fatherLastName?.trim() || null,
       fatherMobile: form.fatherMobile?.trim() || null,
+      fatherPhoto: form.fatherPhoto || null,
       motherFirstName: form.motherFirstName?.trim() || null,
       motherMiddleName: form.motherMiddleName?.trim() || null,
       motherLastName: form.motherLastName?.trim() || null,
       motherMobile: form.motherMobile?.trim() || null,
+      motherPhoto: form.motherPhoto || null,
       landline: form.landline?.trim() || null,
 
       religionId: form.religionId || null,
@@ -395,6 +405,7 @@ export default function StudentsPage() {
     setSelectedStudent(student);
     const sp = student.studentProfile || {};
     setForm({
+      avatar: student.avatar || "",
       firstName: student.firstName || "",
       middleName: student.middleName || sp.middleName || "",
       lastName: student.lastName || "",
@@ -415,10 +426,12 @@ export default function StudentsPage() {
       fatherMiddleName: sp.fatherMiddleName || "",
       fatherLastName: sp.fatherLastName || "",
       fatherMobile: sp.fatherMobile || "",
+      fatherPhoto: sp.fatherPhoto || "",
       motherFirstName: sp.motherFirstName || "",
       motherMiddleName: sp.motherMiddleName || "",
       motherLastName: sp.motherLastName || "",
       motherMobile: sp.motherMobile || "",
+      motherPhoto: sp.motherPhoto || "",
       landline: sp.landline || "",
 
       religionId: sp.religion?.id || sp.religionId || "",
@@ -1142,6 +1155,18 @@ export default function StudentsPage() {
           {/* TAB 1: PERSONAL INFORMATION */}
           {activeFormTab === "personal" && (
             <div className="space-y-3 text-xs">
+              {/* Student Photo Upload & Live Camera */}
+              <div className="p-3.5 bg-gray-50 rounded-2xl border border-gray-200 shadow-2xs">
+                <PhotoUploadInput
+                  value={form.avatar}
+                  onChange={(url) => setForm((f) => ({ ...f, avatar: url }))}
+                  label="Student Portrait Photo"
+                  name={`${form.firstName} ${form.lastName}`}
+                  category="STUDENT_PHOTO"
+                  hint="Upload a clear portrait or take a picture live with your camera"
+                />
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="label font-bold">First Name *</label>
@@ -1310,10 +1335,21 @@ export default function StudentsPage() {
           {/* TAB 2: PARENTS / GUARDIANS */}
           {activeFormTab === "parents" && (
             <div className="space-y-4 text-xs">
-              <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 space-y-3">
-                <h4 className="font-extrabold text-gray-900 text-xs flex items-center gap-1.5">
-                  <User className="w-3.5 h-3.5 text-blue-600" /> Father's Details
+              <div className="p-3.5 bg-gray-50 rounded-xl border border-gray-200 space-y-3">
+                <h4 className="font-extrabold text-gray-900 text-xs flex items-center gap-1.5 border-b border-gray-200 pb-2">
+                  <User className="w-3.5 h-3.5 text-blue-600" /> Father's Details & Photo
                 </h4>
+
+                <PhotoUploadInput
+                  value={form.fatherPhoto}
+                  onChange={(url) => setForm((f) => ({ ...f, fatherPhoto: url }))}
+                  label="Father's Photo"
+                  name={`${form.fatherFirstName} ${form.fatherLastName}`}
+                  category="PARENT_PHOTO"
+                  hint="Upload father's photo or capture live with camera"
+                  size="md"
+                />
+
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
                     <label className="label font-bold">First Name</label>
@@ -1354,10 +1390,21 @@ export default function StudentsPage() {
                 </div>
               </div>
 
-              <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 space-y-3">
-                <h4 className="font-extrabold text-gray-900 text-xs flex items-center gap-1.5">
-                  <User className="w-3.5 h-3.5 text-pink-600" /> Mother's Details
+              <div className="p-3.5 bg-gray-50 rounded-xl border border-gray-200 space-y-3">
+                <h4 className="font-extrabold text-gray-900 text-xs flex items-center gap-1.5 border-b border-gray-200 pb-2">
+                  <User className="w-3.5 h-3.5 text-pink-600" /> Mother's Details & Photo
                 </h4>
+
+                <PhotoUploadInput
+                  value={form.motherPhoto}
+                  onChange={(url) => setForm((f) => ({ ...f, motherPhoto: url }))}
+                  label="Mother's Photo"
+                  name={`${form.motherFirstName} ${form.motherLastName}`}
+                  category="PARENT_PHOTO"
+                  hint="Upload mother's photo or capture live with camera"
+                  size="md"
+                />
+
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
                     <label className="label font-bold">First Name</label>

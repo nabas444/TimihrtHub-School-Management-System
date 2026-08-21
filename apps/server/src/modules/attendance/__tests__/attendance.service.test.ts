@@ -1,14 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const mockDb = {
-  class: { findFirst: vi.fn() },
-  attendanceRecord: { upsert: vi.fn(), findMany: vi.fn() },
-  studentProfile: { findMany: vi.fn() },
-  parentStudentLink: { findMany: vi.fn() },
-  user: { findUnique: vi.fn() },
-  notification: { create: vi.fn(() => ({ catch: vi.fn() })) },
-  $transaction: vi.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
-};
+const { mockDb } = vi.hoisted(() => ({
+  mockDb: {
+    class: { findFirst: vi.fn() },
+    attendanceRecord: { upsert: vi.fn(), findMany: vi.fn() },
+    studentProfile: { findMany: vi.fn() },
+    parentStudentLink: { findMany: vi.fn() },
+    user: { findUnique: vi.fn() },
+    notification: { create: vi.fn(() => ({ catch: vi.fn() })) },
+    $transaction: vi.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
+  },
+}));
 vi.mock('../../../config/database', () => ({ db: mockDb }));
 vi.mock('../../../config/socket', () => ({ emitToUser: vi.fn() }));
 vi.mock('../../../utils/sms', () => ({ sendSms: vi.fn(() => Promise.resolve()) }));

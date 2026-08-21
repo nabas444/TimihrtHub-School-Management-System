@@ -116,15 +116,28 @@ async function main() {
   });
 
   // ── Teacher user ───────────────────────────────────────────────────────────
+  const teacherEmail = "versenova.ai@gmail.com";
+  const existingOldTeacher = await db.user.findFirst({
+    where: { schoolId: school.id, email: "teacher@demoschool.edu" },
+  });
+  if (existingOldTeacher) {
+    await db.user.update({
+      where: { id: existingOldTeacher.id },
+      data: { email: teacherEmail, password: hashedPassword },
+    });
+  }
+
   const teacher = await db.user.upsert({
     where: {
-      schoolId_email: { schoolId: school.id, email: "teacher@demoschool.edu" },
+      schoolId_email: { schoolId: school.id, email: teacherEmail },
     },
-    update: {},
+    update: {
+      password: hashedPassword,
+    },
     create: {
       schoolId: school.id,
       role: Role.TEACHER,
-      email: "teacher@demoschool.edu",
+      email: teacherEmail,
       password: hashedPassword,
       firstName: "Tigist",
       lastName: "Bekele",
@@ -142,15 +155,28 @@ async function main() {
   });
 
   // ── Student user ───────────────────────────────────────────────────────────
+  const studentEmail = "abenezerabebe848@gmail.com";
+  const existingOldStudent = await db.user.findFirst({
+    where: { schoolId: school.id, email: "student@demoschool.edu" },
+  });
+  if (existingOldStudent) {
+    await db.user.update({
+      where: { id: existingOldStudent.id },
+      data: { email: studentEmail, password: hashedPassword },
+    });
+  }
+
   const student = await db.user.upsert({
     where: {
-      schoolId_email: { schoolId: school.id, email: "student@demoschool.edu" },
+      schoolId_email: { schoolId: school.id, email: studentEmail },
     },
-    update: {},
+    update: {
+      password: hashedPassword,
+    },
     create: {
       schoolId: school.id,
       role: Role.STUDENT,
-      email: "student@demoschool.edu",
+      email: studentEmail,
       password: hashedPassword,
       firstName: "Dawit",
       lastName: "Haile",
@@ -168,15 +194,28 @@ async function main() {
   });
 
   // ── Parent user ────────────────────────────────────────────────────────────
+  const parentEmail = "yeshiworkmoges3730@gmail.com";
+  const existingOldParent = await db.user.findFirst({
+    where: { schoolId: school.id, email: "parent@demoschool.edu" },
+  });
+  if (existingOldParent) {
+    await db.user.update({
+      where: { id: existingOldParent.id },
+      data: { email: parentEmail, password: hashedPassword },
+    });
+  }
+
   const parent = await db.user.upsert({
     where: {
-      schoolId_email: { schoolId: school.id, email: "parent@demoschool.edu" },
+      schoolId_email: { schoolId: school.id, email: parentEmail },
     },
-    update: {},
+    update: {
+      password: hashedPassword,
+    },
     create: {
       schoolId: school.id,
       role: Role.PARENT,
-      email: "parent@demoschool.edu",
+      email: parentEmail,
       password: hashedPassword,
       firstName: "Haile",
       lastName: "Tadesse",
@@ -214,10 +253,10 @@ async function main() {
   }
 
   console.log("✅ Seed users created:");
-  console.log("   Admin:   admin@demoschool.edu   / password123");
-  console.log("   Teacher: teacher@demoschool.edu / password123");
-  console.log("   Student: student@demoschool.edu / password123");
-  console.log("   Parent:  parent@demoschool.edu  / password123");
+  console.log("   Admin:   admin@demoschool.edu        / password123");
+  console.log("   Teacher: versenova.ai@gmail.com      / password123");
+  console.log("   Student: abenezerabebe848@gmail.com   / password123");
+  console.log("   Parent:  yeshiworkmoges3730@gmail.com / password123");
 
   const finance = await db.user.upsert({
     where: {

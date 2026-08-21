@@ -29,10 +29,12 @@ import {
   PageLoader,
   Modal,
 } from "../../components/ui/index";
+import PhotoUploadInput from "../../components/shared/PhotoUploadInput";
 import clsx from "clsx";
 import toast from "react-hot-toast";
 
 const initialParentForm = {
+  avatar: "",
   firstName: "",
   middleName: "",
   lastName: "",
@@ -150,6 +152,7 @@ export default function ParentsPage() {
   const handleOpenEdit = (p) => {
     setSelectedParent(p);
     setEditForm({
+      avatar: p.avatar || "",
       firstName: p.firstName || "",
       middleName: p.middleName || "",
       lastName: p.lastName || "",
@@ -421,6 +424,18 @@ export default function ParentsPage() {
         }
       >
         <div className="space-y-4 text-xs">
+          {/* Parent Photo Upload & Live Camera */}
+          <div className="p-3.5 bg-gray-50 rounded-2xl border border-gray-200 shadow-2xs">
+            <PhotoUploadInput
+              value={form.avatar}
+              onChange={(url) => setForm((f) => ({ ...f, avatar: url }))}
+              label="Parent / Guardian Photo"
+              name={`${form.firstName} ${form.lastName}`}
+              category="PARENT_PHOTO"
+              hint="Upload parent photo or take a picture live with camera"
+            />
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="label font-bold">First Name *</label>
@@ -598,6 +613,18 @@ export default function ParentsPage() {
         }
       >
         <div className="space-y-3 text-xs">
+          {/* Parent Photo Upload & Live Camera */}
+          <div className="p-3.5 bg-gray-50 rounded-2xl border border-gray-200 shadow-2xs">
+            <PhotoUploadInput
+              value={editForm.avatar}
+              onChange={(url) => setEditForm((f) => ({ ...f, avatar: url }))}
+              label="Parent / Guardian Photo"
+              name={`${editForm.firstName || ""} ${editForm.lastName || ""}`}
+              category="PARENT_PHOTO"
+              hint="Upload parent photo or take a picture live with camera"
+            />
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="label font-bold">First Name</label>

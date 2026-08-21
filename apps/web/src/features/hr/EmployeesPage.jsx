@@ -44,10 +44,12 @@ import {
   Modal,
 } from "../../components/ui/index";
 import LookupSelect from "../../components/shared/LookupSelect";
+import PhotoUploadInput from "../../components/shared/PhotoUploadInput";
 import clsx from "clsx";
 import toast from "react-hot-toast";
 
 const initialEmployeeForm = {
+  avatar: "",
   firstName: "",
   middleName: "",
   lastName: "",
@@ -226,6 +228,20 @@ export default function EmployeesPage() {
     },
     onError: (err) => {
       toast.error(err.response?.data?.message || "Failed to create employee");
+    },
+  });
+
+  const deleteEmployeeMutation = useMutation({
+    mutationFn: (empId) => api.delete(`/employees/${empId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["employees"] });
+      qc.invalidateQueries({ queryKey: ["employees-active-list"] });
+      qc.invalidateQueries({ queryKey: ["employee-dashboard"] });
+      toast.success("Employee record deleted successfully");
+      setDetailModalOpen(false);
+    },
+    onError: (err) => {
+      toast.error(err.response?.data?.message || "Failed to delete employee");
     },
   });
 
@@ -500,7 +516,7 @@ export default function EmployeesPage() {
                 >
                   <div className="flex items-start gap-3">
                     <Avatar
-                      src={emp.user?.avatar}
+                      src={emp.user?.avatar || emp.avatar}
                       name={fullName}
                       size="md"
                       className="bg-primary-100 text-primary-700 font-bold border border-primary-200"
@@ -561,7 +577,7 @@ export default function EmployeesPage() {
                         <td className="py-3.5 px-4">
                           <div className="flex items-center gap-3">
                             <Avatar
-                              src={emp.user?.avatar}
+                              src={emp.user?.avatar || emp.avatar}
                               name={fullName}
                               size="md"
                               className="bg-primary-100 text-primary-700 font-bold border border-primary-200"
@@ -628,15 +644,33 @@ export default function EmployeesPage() {
 
                         {/* Actions */}
                         <td className="py-3.5 px-4 text-right">
-                          <button
-                            className="btn-ghost p-1.5 text-primary-600 hover:text-primary-800 hover:bg-primary-50 rounded"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openEmployeeDrawer(emp.id);
-                            }}
-                          >
-                            <ChevronRight className="w-4 h-4" />
-                          </button>
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition"
+                              title="Delete Employee"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (
+                                  window.confirm(
+                                    `Are you sure you want to permanently remove employee "${fullName}" (${emp.employeeNumber})?`
+                                  )
+                                ) {
+                                  deleteEmployeeMutation.mutate(emp.id);
+                                }
+                              }}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              className="btn-ghost p-1.5 text-primary-600 hover:text-primary-800 hover:bg-primary-50 rounded"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openEmployeeDrawer(emp.id);
+                              }}
+                            >
+                              <ChevronRight className="w-4 h-4" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -683,6 +717,20 @@ export default function EmployeesPage() {
         }
       >
         <div className="space-y-4 text-xs">
+          {/* Employee Photo Upload & Live Camera */}
+          <div className="p-3.5 bg-gray-50 rounded-2xl border border-gray-200 shadow-2xs">
+            <PhotoUploadInput
+              value={employeeForm.avatar}
+              onChange={(url) =>
+                setEmployeeForm((f) => ({ ...f, avatar: url }))
+              }
+              label="Employee Portrait Photo"
+              name={`${employeeForm.firstName} ${employeeForm.lastName}`}
+              category="STAFF_PHOTO"
+              hint="Upload an employee photo or take a picture live with camera"
+            />
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="label font-bold">First Name *</label>
@@ -889,7 +937,7 @@ export default function EmployeesPage() {
             <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
               <div className="flex items-center gap-3">
                 <Avatar
-                  src={employeeDetail.user?.avatar}
+                  src={employeeDetail.user?.avatar || employeeDetail.avatar}
                   name={`${employeeDetail.firstName} ${employeeDetail.lastName}`}
                   size="lg"
                   className="bg-primary-100 text-primary-700 font-bold border border-primary-200"
@@ -968,6 +1016,25 @@ export default function EmployeesPage() {
                     </button>
                   </div>
                 )}
+
+                <button
+                  onClick={() => {
+                    const empName = `${employeeDetail.firstName} ${employeeDetail.lastName}`;
+                    if (
+                      window.confirm(
+                        `Are you sure you want to permanently delete employee "${empName}" (${employeeDetail.employeeNumber}) and all associated records?`
+                      )
+                    ) {
+                      deleteEmployeeMutation.mutate(employeeDetail.id);
+                    }
+                  }}
+                  className="btn-secondary text-xs py-1.5 inline-flex items-center gap-1.5 border-red-300 text-red-700 bg-red-50 hover:bg-red-100 shadow-xs"
+                  title="Permanently remove employee"
+                  disabled={deleteEmployeeMutation.isPending}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  {deleteEmployeeMutation.isPending ? "Deleting…" : "Delete Employee"}
+                </button>
               </div>
             </div>
 
@@ -1322,9 +1389,12 @@ export default function EmployeesPage() {
               value={userAccForm.role}
               onChange={(e) => setUserAccForm({ ...userAccForm, role: e.target.value })}
             >
-              <option value="TEACHER">Teacher / Faculty</option>
-              <option value="ADMIN">School Administrator</option>
-              <option value="FINANCE">Finance Officer</option>
+              <option value="TEACHER">Teacher / Faculty / Dormitory Warden / Academic Staff</option>
+              <option value="ADMIN">School Administrator / Department Head</option>
+              <option value="FINANCE">Finance Officer / Bursar / Accountant</option>
+              <option value="SUPER_ADMIN">Principal / School Director / Super Admin</option>
+              <option value="PARENT">Parent / Guardian</option>
+              <option value="STUDENT">Student</option>
             </select>
           </div>
           <div>

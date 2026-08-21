@@ -183,7 +183,9 @@ export const listUsers = async (
             motherMiddleName: true,
             motherLastName: true,
             fatherMobile: true,
+            fatherPhoto: true,
             motherMobile: true,
+            motherPhoto: true,
             landline: true,
             nationality: true,
             city: true,
@@ -370,6 +372,7 @@ export const createUser = async (
     birthPlace?: string | null;
     emergencyContact?: string | null;
     emergencyPhone?: string | null;
+    avatar?: string | null;
 
     // Student-specific
     admissionNumber?: string | null;
@@ -391,7 +394,9 @@ export const createUser = async (
     motherMiddleName?: string | null;
     motherLastName?: string | null;
     fatherMobile?: string | null;
+    fatherPhoto?: string | null;
     motherMobile?: string | null;
+    motherPhoto?: string | null;
     landline?: string | null;
     religionId?: string | null;
     categoryId?: string | null;
@@ -469,6 +474,7 @@ export const createUser = async (
       birthPlace: data.birthPlace ?? null,
       emergencyContact: data.emergencyContact ?? null,
       emergencyPhone: data.emergencyPhone ?? null,
+      avatar: data.avatar ?? null,
 
       // Create role-specific profile inline
       ...(data.role === Role.STUDENT && {
@@ -493,7 +499,9 @@ export const createUser = async (
             motherMiddleName: data.motherMiddleName ?? null,
             motherLastName: data.motherLastName ?? null,
             fatherMobile: data.fatherMobile ?? null,
+            fatherPhoto: data.fatherPhoto ?? null,
             motherMobile: data.motherMobile ?? null,
+            motherPhoto: data.motherPhoto ?? null,
             landline: data.landline ?? null,
             nationality: data.nationality ?? null,
             city: data.city ?? null,
@@ -661,9 +669,10 @@ export const updateUser = async (
     fatherLastName: string | null;
     motherFirstName: string | null;
     motherMiddleName: string | null;
-    motherLastName: string | null;
     fatherMobile: string | null;
+    fatherPhoto: string | null;
     motherMobile: string | null;
+    motherPhoto: string | null;
     landline: string | null;
     religionId: string | null;
     categoryId: string | null;
@@ -722,11 +731,13 @@ export const updateUser = async (
     "fatherFirstName",
     "fatherMiddleName",
     "fatherLastName",
+    "fatherMobile",
+    "fatherPhoto",
     "motherFirstName",
     "motherMiddleName",
     "motherLastName",
-    "fatherMobile",
     "motherMobile",
+    "motherPhoto",
     "landline",
     "religionId",
     "categoryId",

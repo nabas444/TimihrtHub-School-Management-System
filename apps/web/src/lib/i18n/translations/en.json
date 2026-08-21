@@ -1,6 +1,7 @@
 {
   "nav": {
     "dashboard": "Dashboard",
+    "admissions": "Admissions CRM",
     "students": "Students",
     "parents": "Parents & Guardians",
     "my_students": "My Students",
@@ -56,6 +57,12 @@
     "recruiting_pipeline": "Recruiting & Hiring",
     "system_users": "Portal Login Users",
     "leave_requests": "Leave Requests",
+    "hostel": "Hostel & Dormitory",
+    "hostel_dashboard": "Occupancy & Rooms",
+    "hostel_applications": "Applications & Intake",
+    "hostel_daily_ops": "Daily Operations",
+    "hostel_care": "Maintenance & Care",
+    "hostel_my_room": "My Room & Outpasses",
     "files": "Files",
     "resources": "Resources",
     "curriculum": "Curriculum",
@@ -66,6 +73,7 @@
     "ai_tutor": "AI Tutor",
     "profile": "Profile",
     "school_config": "School Config",
+    "audit_logs": "Audit Logs",
     "billing": "Billing",
     "section_overview": "Overview",
     "section_academic": "Academic",

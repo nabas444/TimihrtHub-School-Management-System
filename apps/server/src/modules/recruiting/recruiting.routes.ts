@@ -6,6 +6,7 @@ import {
   EmploymentType,
   RequisitionStatus,
   PostingStatus,
+  SalaryType,
   ApplicationStage,
   InterviewFormat,
   InterviewRecommendation,
@@ -16,7 +17,11 @@ import { db } from "../../config/database";
 import { AppError } from "../../middleware/errorHandler";
 import { sendSuccess, sendCreated, paginationMeta } from "../../utils/response";
 import { authorize } from "../../middleware/auth";
-import { generateJobOfferLetterPdf } from "../../utils/pdf";
+import { generateJobOfferLetterPdf, generateJobPostingFlyerPdf } from "../../utils/pdf";
+import { recordAuditEvent } from "../../utils/auditLog";
+import { enqueueTelegramJobPost } from "../../jobs/telegramWorker";
+import { deleteTelegramMessage } from "../../utils/telegram";
+import { logger } from "../../utils/logger";
 
 export const protectedRecruitingRouter = Router();
 export const publicRecruitingRouter = Router();
@@ -33,12 +38,18 @@ publicRecruitingRouter.get("/:schoolSlug/jobs", async (req: Request, res: Respon
 
     const school = await db.school.findFirst({
       where: {
-        OR: [{ id: schoolSlug }, { name: { equals: schoolSlug.replace(/-/g, " "), mode: "insensitive" } }],
+        OR: [
+          { slug: schoolSlug },
+          { id: schoolSlug },
+          { name: { equals: schoolSlug.replace(/-/g, " "), mode: "insensitive" } },
+        ],
         isActive: true,
       },
       select: {
         id: true,
         name: true,
+        slug: true,
+        logo: true,
         city: true,
         country: true,
         email: true,
@@ -51,7 +62,7 @@ publicRecruitingRouter.get("/:schoolSlug/jobs", async (req: Request, res: Respon
       throw new AppError("School not found or inactive", 404);
     }
 
-    const postings = await db.jobPosting.findMany({
+    const rawPostings = await db.jobPosting.findMany({
       where: {
         schoolId: school.id,
         status: PostingStatus.PUBLISHED,
@@ -66,7 +77,13 @@ publicRecruitingRouter.get("/:schoolSlug/jobs", async (req: Request, res: Respon
         description: true,
         requirements: true,
         benefits: true,
+        salaryType: true,
         salaryRange: true,
+        salaryFixedAmount: true,
+        salaryCurrency: true,
+        bannerImageUrl: true,
+        companyTagline: true,
+        flyerTheme: true,
         closingDate: true,
         publishedAt: true,
         department: { select: { value: true } },
@@ -74,6 +91,21 @@ publicRecruitingRouter.get("/:schoolSlug/jobs", async (req: Request, res: Respon
       },
       orderBy: { publishedAt: "desc" },
     });
+
+    // Sanitize salary per salaryType
+    const postings = rawPostings.map((p) => ({
+      ...p,
+      salaryRange: p.salaryType === "RANGE" ? p.salaryRange : null,
+      salaryFixedAmount: p.salaryType === "FIXED" ? p.salaryFixedAmount : null,
+      salaryDisplay:
+        p.salaryType === "FIXED"
+          ? `${p.salaryFixedAmount?.toLocaleString()} ${p.salaryCurrency || "USD"}`
+          : p.salaryType === "RANGE"
+          ? p.salaryRange || "Competitive"
+          : p.salaryType === "NEGOTIABLE"
+          ? "Negotiable"
+          : null,
+    }));
 
     return sendSuccess(res, { school, postings });
   } catch (err) {
@@ -87,9 +119,25 @@ publicRecruitingRouter.get("/:schoolSlug/jobs/:idOrSlug", async (req: Request, r
 
     const school = await db.school.findFirst({
       where: {
-        OR: [{ id: schoolSlug }, { name: { equals: schoolSlug.replace(/-/g, " "), mode: "insensitive" } }],
+        OR: [
+          { slug: schoolSlug },
+          { id: schoolSlug },
+          { name: { equals: schoolSlug.replace(/-/g, " "), mode: "insensitive" } },
+        ],
+        isActive: true,
       },
-      select: { id: true, name: true, city: true, country: true },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        logo: true,
+        address: true,
+        city: true,
+        country: true,
+        email: true,
+        phone: true,
+        website: true,
+      },
     });
 
     if (!school) throw new AppError("School not found", 404);
@@ -99,6 +147,7 @@ publicRecruitingRouter.get("/:schoolSlug/jobs/:idOrSlug", async (req: Request, r
         schoolId: school.id,
         OR: [{ id: idOrSlug }, { slug: idOrSlug }],
         status: PostingStatus.PUBLISHED,
+        OR: [{ closingDate: null }, { closingDate: { gte: new Date() } }],
       },
       include: {
         department: { select: { value: true } },
@@ -108,7 +157,97 @@ publicRecruitingRouter.get("/:schoolSlug/jobs/:idOrSlug", async (req: Request, r
 
     if (!posting) throw new AppError("Job posting not found or is no longer open", 404);
 
-    return sendSuccess(res, { school, posting });
+    const safePosting = {
+      ...posting,
+      salaryRange: posting.salaryType === "RANGE" ? posting.salaryRange : null,
+      salaryFixedAmount: posting.salaryType === "FIXED" ? posting.salaryFixedAmount : null,
+      salaryDisplay:
+        posting.salaryType === "FIXED"
+          ? `${posting.salaryFixedAmount?.toLocaleString()} ${posting.salaryCurrency || "USD"}`
+          : posting.salaryType === "RANGE"
+          ? posting.salaryRange || "Competitive"
+          : posting.salaryType === "NEGOTIABLE"
+          ? "Negotiable"
+          : null,
+    };
+
+    return sendSuccess(res, { school, posting: safePosting });
+  } catch (err) {
+    next(err);
+  }
+});
+
+publicRecruitingRouter.get("/:schoolSlug/jobs/:idOrSlug/flyer.pdf", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { schoolSlug, idOrSlug } = req.params;
+
+    const school = await db.school.findFirst({
+      where: {
+        OR: [
+          { slug: schoolSlug },
+          { id: schoolSlug },
+          { name: { equals: schoolSlug.replace(/-/g, " "), mode: "insensitive" } },
+        ],
+        isActive: true,
+      },
+    });
+
+    if (!school) throw new AppError("School not found", 404);
+
+    const posting = await db.jobPosting.findFirst({
+      where: {
+        schoolId: school.id,
+        OR: [{ id: idOrSlug }, { slug: idOrSlug }],
+        status: PostingStatus.PUBLISHED,
+        OR: [{ closingDate: null }, { closingDate: { gte: new Date() } }],
+      },
+      include: {
+        department: { select: { value: true } },
+        position: { select: { value: true } },
+      },
+    });
+
+    if (!posting) throw new AppError("Job posting not found or is no longer open", 404);
+
+    const clientBaseUrl = process.env.CLIENT_URL || "http://localhost:5173";
+    const publicUrl = `${clientBaseUrl}/careers/${school.slug || school.id}/${posting.slug}`;
+
+    const pdfBuffer = await generateJobPostingFlyerPdf(
+      {
+        name: school.name,
+        address: school.address,
+        phone: school.phone,
+        email: school.email,
+        logo: school.logo,
+      },
+      {
+        title: posting.title,
+        slug: posting.slug,
+        companyTagline: posting.companyTagline,
+        employmentType: posting.employmentType,
+        location: posting.location,
+        description: posting.description,
+        requirements: posting.requirements,
+        benefits: posting.benefits,
+        salaryType: posting.salaryType,
+        salaryRange: posting.salaryRange,
+        salaryFixedAmount: posting.salaryFixedAmount,
+        salaryCurrency: posting.salaryCurrency,
+        closingDate: posting.closingDate,
+        applicationDeadlineNote: posting.applicationDeadlineNote,
+        socialLinks: posting.socialLinks,
+        bannerImageUrl: posting.bannerImageUrl,
+        contactEmail: posting.contactEmail,
+        contactPhone: posting.contactPhone,
+        department: posting.department?.value,
+        position: posting.position?.value,
+      },
+      publicUrl,
+    );
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="job-flyer-${posting.slug}.pdf"`);
+    return res.send(pdfBuffer);
   } catch (err) {
     next(err);
   }
@@ -424,19 +563,102 @@ protectedRecruitingRouter.get(
   },
 );
 
+const ALLOWED_PLATFORMS = [
+  "linkedin",
+  "whatsapp",
+  "telegram",
+  "facebook",
+  "x",
+  "instagram",
+  "website",
+  "other",
+] as const;
+
+const normalizeUrl = (raw: unknown) => {
+  if (typeof raw !== "string") return "";
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  if (!/^https?:\/\//i.test(trimmed)) {
+    return `https://${trimmed}`;
+  }
+  return trimmed;
+};
+
+const socialLinkSchema = z.object({
+  platform: z.enum(ALLOWED_PLATFORMS),
+  label: z.string().optional().nullable().or(z.literal("")),
+  url: z.preprocess(
+    normalizeUrl,
+    z.string().url("Must be a valid URL (e.g. https://t.me/TimhirtHub)"),
+  ),
+});
+
+const emptyToNull = (val: unknown) => {
+  if (typeof val === "string" && val.trim() === "") return null;
+  return val ?? null;
+};
+
+const parseOptionalNumber = (val: unknown) => {
+  if (val === "" || val === null || val === undefined) return null;
+  const num = Number(val);
+  return isNaN(num) ? null : num;
+};
+
+const filterEmptySocialLinks = (val: unknown) => {
+  if (!Array.isArray(val)) return [];
+  return val.filter(
+    (item) =>
+      item &&
+      typeof item === "object" &&
+      typeof item.url === "string" &&
+      item.url.trim() !== "",
+  );
+};
+
+function getClientBaseUrl(): string {
+  const raw = process.env.CLIENT_URL || "http://localhost:3000";
+  const first = raw.split(",")[0].trim();
+  return first.replace(/\/+$/, "");
+}
+
 const createPostingSchema = z.object({
-  title: z.string().min(2, "Title is required"),
-  requisitionId: z.string().optional().nullable(),
-  departmentId: z.string().optional().nullable(),
-  positionId: z.string().optional().nullable(),
+  title: z.string().min(2, "Title is required (minimum 2 characters)"),
+  requisitionId: z.preprocess(emptyToNull, z.string().optional().nullable()),
+  departmentId: z.preprocess(emptyToNull, z.string().optional().nullable()),
+  positionId: z.preprocess(emptyToNull, z.string().optional().nullable()),
   employmentType: z.nativeEnum(EmploymentType).default(EmploymentType.FULL_TIME),
-  location: z.string().optional().nullable(),
-  description: z.string().min(10, "Job description is required"),
-  requirements: z.string().optional().nullable(),
-  benefits: z.string().optional().nullable(),
-  salaryRange: z.string().optional().nullable(),
-  closingDate: z.string().optional().nullable(),
+  location: z.preprocess(emptyToNull, z.string().optional().nullable()),
+  description: z.string().min(10, "Job description is required (minimum 10 characters)"),
+  requirements: z.preprocess(emptyToNull, z.string().optional().nullable()),
+  benefits: z.preprocess(emptyToNull, z.string().optional().nullable()),
+  salaryType: z.nativeEnum(SalaryType).default(SalaryType.RANGE),
+  salaryRange: z.preprocess(emptyToNull, z.string().optional().nullable()),
+  salaryFixedAmount: z.preprocess(
+    parseOptionalNumber,
+    z.number().positive("Salary fixed amount must be greater than 0").optional().nullable(),
+  ),
+  salaryCurrency: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() ? v.trim() : "USD"),
+    z.string().default("USD"),
+  ),
+  closingDate: z.preprocess(emptyToNull, z.string().optional().nullable()),
   publishNow: z.boolean().default(false),
+  status: z.nativeEnum(PostingStatus).optional(),
+
+  // Marketing Flyer Fields
+  bannerImageUrl: z.preprocess(emptyToNull, z.string().optional().nullable()),
+  companyTagline: z.preprocess(emptyToNull, z.string().optional().nullable()),
+  applicationDeadlineNote: z.preprocess(emptyToNull, z.string().optional().nullable()),
+  socialLinks: z.preprocess(filterEmptySocialLinks, z.array(socialLinkSchema).optional().nullable()),
+  flyerTheme: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() ? v.trim() : "default"),
+    z.string().default("default"),
+  ),
+  contactEmail: z.preprocess(
+    emptyToNull,
+    z.string().email("Invalid contact email address").optional().nullable(),
+  ),
+  contactPhone: z.preprocess(emptyToNull, z.string().optional().nullable()),
 });
 
 protectedRecruitingRouter.post(
@@ -447,6 +669,34 @@ protectedRecruitingRouter.post(
       const schoolId = req.user.schoolId;
       const data = createPostingSchema.parse(req.body);
 
+      // Validate and compute salary fields based on salaryType
+      let salaryFixedAmount: number | null = null;
+      let salaryRange: string | null = null;
+
+      if (data.salaryType === SalaryType.FIXED) {
+        if (!data.salaryFixedAmount) {
+          throw new AppError("Fixed salary amount is required when salary type is FIXED", 400);
+        }
+        salaryFixedAmount = data.salaryFixedAmount;
+      } else if (data.salaryType === SalaryType.RANGE) {
+        salaryRange = data.salaryRange || null;
+        // Auto-derive from linked requisition if not manually entered
+        if (!salaryRange && data.requisitionId) {
+          const reqRecord = await db.jobRequisition.findFirst({
+            where: { id: data.requisitionId, schoolId },
+          });
+          if (reqRecord && (reqRecord.salaryMin !== null || reqRecord.salaryMax !== null)) {
+            salaryRange =
+              reqRecord.salaryMin && reqRecord.salaryMax
+                ? `${reqRecord.salaryMin.toLocaleString()} - ${reqRecord.salaryMax.toLocaleString()}`
+                : `${(reqRecord.salaryMin || reqRecord.salaryMax)?.toLocaleString()}`;
+          }
+        }
+        if (!salaryRange) {
+          salaryRange = "Competitive";
+        }
+      }
+
       // Generate clean slug
       const rawSlug = data.title
         .toLowerCase()
@@ -454,6 +704,8 @@ protectedRecruitingRouter.post(
         .replace(/^-+|-+$/g, "");
       const randomSuffix = Math.random().toString(36).substring(2, 6);
       const slug = `${rawSlug}-${randomSuffix}`;
+
+      const initialStatus = data.status || (data.publishNow ? PostingStatus.PUBLISHED : PostingStatus.DRAFT);
 
       const posting = await db.jobPosting.create({
         data: {
@@ -468,16 +720,58 @@ protectedRecruitingRouter.post(
           description: data.description,
           requirements: data.requirements || null,
           benefits: data.benefits || null,
-          salaryRange: data.salaryRange || null,
+          salaryType: data.salaryType,
+          salaryRange,
+          salaryFixedAmount,
+          salaryCurrency: data.salaryCurrency || "USD",
           closingDate: data.closingDate ? new Date(data.closingDate) : null,
-          status: data.publishNow ? PostingStatus.PUBLISHED : PostingStatus.DRAFT,
-          publishedAt: data.publishNow ? new Date() : null,
+          status: initialStatus,
+          publishedAt: initialStatus === PostingStatus.PUBLISHED ? new Date() : null,
+
+          bannerImageUrl: data.bannerImageUrl || null,
+          companyTagline: data.companyTagline || null,
+          applicationDeadlineNote: data.applicationDeadlineNote || null,
+          socialLinks: data.socialLinks ? (data.socialLinks as any) : undefined,
+          flyerTheme: data.flyerTheme || "default",
+          contactEmail: data.contactEmail || null,
+          contactPhone: data.contactPhone || null,
         },
         include: {
           department: true,
           position: true,
         },
       });
+
+      if (posting.status === PostingStatus.PUBLISHED) {
+        const school = await db.school.findUnique({
+          where: { id: schoolId },
+          select: { id: true, name: true, slug: true },
+        });
+        const clientBaseUrl = getClientBaseUrl();
+        const publicJobUrl = `${clientBaseUrl}/careers/${school?.slug || schoolId}/${posting.slug}`;
+
+        await enqueueTelegramJobPost({
+          postingId: posting.id,
+          schoolId,
+          actorId: req.user.id,
+          actorEmail: req.user.email,
+          actorRole: req.user.role,
+          posting: {
+            title: posting.title,
+            companyTagline: posting.companyTagline,
+            employmentType: posting.employmentType,
+            location: posting.location,
+            salaryType: posting.salaryType,
+            salaryRange: posting.salaryRange,
+            salaryFixedAmount: posting.salaryFixedAmount,
+            salaryCurrency: posting.salaryCurrency,
+            closingDate: posting.closingDate,
+            bannerImageUrl: posting.bannerImageUrl,
+            publicJobUrl,
+            schoolName: school?.name,
+          },
+        });
+      }
 
       return sendCreated(res, posting, "Job posting created successfully");
     } catch (err) {
@@ -498,6 +792,51 @@ protectedRecruitingRouter.patch(
       const existing = await db.jobPosting.findFirst({ where: { id, schoolId } });
       if (!existing) throw new AppError("Posting not found", 404);
 
+      const effectiveSalaryType = data.salaryType ?? existing.salaryType;
+      let salaryFixedAmount = existing.salaryFixedAmount;
+      let salaryRange = existing.salaryRange;
+
+      if (data.salaryType !== undefined || data.salaryFixedAmount !== undefined || data.salaryRange !== undefined) {
+        if (effectiveSalaryType === SalaryType.FIXED) {
+          salaryFixedAmount = data.salaryFixedAmount !== undefined ? data.salaryFixedAmount : existing.salaryFixedAmount;
+          if (!salaryFixedAmount) {
+            throw new AppError("Fixed salary amount is required when salary type is FIXED", 400);
+          }
+          salaryRange = null;
+        } else if (effectiveSalaryType === SalaryType.RANGE) {
+          salaryRange = data.salaryRange !== undefined ? data.salaryRange : existing.salaryRange;
+          if (!salaryRange && (data.requisitionId || existing.requisitionId)) {
+            const reqId = data.requisitionId || existing.requisitionId;
+            const reqRecord = await db.jobRequisition.findFirst({ where: { id: reqId!, schoolId } });
+            if (reqRecord && (reqRecord.salaryMin !== null || reqRecord.salaryMax !== null)) {
+              salaryRange =
+                reqRecord.salaryMin && reqRecord.salaryMax
+                  ? `${reqRecord.salaryMin.toLocaleString()} - ${reqRecord.salaryMax.toLocaleString()}`
+                  : `${(reqRecord.salaryMin || reqRecord.salaryMax)?.toLocaleString()}`;
+            }
+          }
+          if (!salaryRange) {
+            salaryRange = "Competitive";
+          }
+          salaryFixedAmount = null;
+        } else {
+          salaryFixedAmount = null;
+          salaryRange = null;
+        }
+      }
+
+      const nextStatus =
+        data.status !== undefined
+          ? data.status
+          : data.publishNow !== undefined
+          ? data.publishNow
+            ? PostingStatus.PUBLISHED
+            : PostingStatus.DRAFT
+          : existing.status;
+
+      const isTransitioningToPublished =
+        existing.status !== PostingStatus.PUBLISHED && nextStatus === PostingStatus.PUBLISHED;
+
       const updated = await db.jobPosting.update({
         where: { id },
         data: {
@@ -509,18 +848,196 @@ protectedRecruitingRouter.patch(
           ...(data.description !== undefined && { description: data.description }),
           ...(data.requirements !== undefined && { requirements: data.requirements || null }),
           ...(data.benefits !== undefined && { benefits: data.benefits || null }),
-          ...(data.salaryRange !== undefined && { salaryRange: data.salaryRange || null }),
+          ...(data.salaryType !== undefined && { salaryType: data.salaryType }),
+          salaryRange,
+          salaryFixedAmount,
+          ...(data.salaryCurrency !== undefined && { salaryCurrency: data.salaryCurrency || "USD" }),
           ...(data.closingDate !== undefined && {
             closingDate: data.closingDate ? new Date(data.closingDate) : null,
           }),
-          ...(data.publishNow !== undefined && {
-            status: data.publishNow ? PostingStatus.PUBLISHED : PostingStatus.DRAFT,
-            publishedAt: data.publishNow ? new Date() : existing.publishedAt,
+          status: nextStatus,
+          publishedAt:
+            nextStatus === PostingStatus.PUBLISHED
+              ? existing.publishedAt || new Date()
+              : existing.publishedAt,
+          ...(data.bannerImageUrl !== undefined && { bannerImageUrl: data.bannerImageUrl || null }),
+          ...(data.companyTagline !== undefined && { companyTagline: data.companyTagline || null }),
+          ...(data.applicationDeadlineNote !== undefined && {
+            applicationDeadlineNote: data.applicationDeadlineNote || null,
           }),
+          ...(data.socialLinks !== undefined && {
+            socialLinks: data.socialLinks ? (data.socialLinks as any) : undefined,
+          }),
+          ...(data.flyerTheme !== undefined && { flyerTheme: data.flyerTheme || "default" }),
+          ...(data.contactEmail !== undefined && { contactEmail: data.contactEmail || null }),
+          ...(data.contactPhone !== undefined && { contactPhone: data.contactPhone || null }),
         },
       });
 
+      if (isTransitioningToPublished && updated.status === PostingStatus.PUBLISHED) {
+        const school = await db.school.findUnique({
+          where: { id: schoolId },
+          select: { id: true, name: true, slug: true },
+        });
+        const clientBaseUrl = getClientBaseUrl();
+        const publicJobUrl = `${clientBaseUrl}/careers/${school?.slug || schoolId}/${updated.slug}`;
+
+        await enqueueTelegramJobPost({
+          postingId: updated.id,
+          schoolId,
+          actorId: req.user.id,
+          actorEmail: req.user.email,
+          actorRole: req.user.role,
+          posting: {
+            title: updated.title,
+            companyTagline: updated.companyTagline,
+            employmentType: updated.employmentType,
+            location: updated.location,
+            salaryType: updated.salaryType,
+            salaryRange: updated.salaryRange,
+            salaryFixedAmount: updated.salaryFixedAmount,
+            salaryCurrency: updated.salaryCurrency,
+            closingDate: updated.closingDate,
+            bannerImageUrl: updated.bannerImageUrl,
+            publicJobUrl,
+            schoolName: school?.name,
+          },
+        });
+      }
+
+      await recordAuditEvent({
+        schoolId,
+        actorId: req.user.id,
+        actorEmail: req.user.email,
+        actorRole: req.user.role,
+        action: "JOB_POSTING_UPDATED",
+        targetType: "JobPosting",
+        targetId: id,
+        metadata: {
+          title: updated.title,
+          status: updated.status,
+          salaryType: updated.salaryType,
+        },
+        req,
+      });
+
       return sendSuccess(res, updated, "Job posting updated");
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+protectedRecruitingRouter.delete(
+  "/postings/:id",
+  adminGuard,
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const schoolId = req.user.schoolId;
+      const { id } = req.params;
+
+      const posting = await db.jobPosting.findFirst({
+        where: { id, schoolId },
+      });
+
+      if (!posting) {
+        throw new AppError("Job posting not found", 404);
+      }
+
+      // If posted to Telegram, delete from Telegram channel
+      if (posting.telegramMessageId && posting.telegramChannelId) {
+        deleteTelegramMessage(posting.telegramChannelId, posting.telegramMessageId).catch((err) => {
+          logger.warn(`Failed to delete Telegram message on posting deletion: ${err?.message}`);
+        });
+      }
+
+      await db.jobPosting.delete({
+        where: { id },
+      });
+
+      await recordAuditEvent({
+        schoolId,
+        actorId: req.user.id,
+        actorEmail: req.user.email,
+        actorRole: req.user.role,
+        action: "JOB_POSTING_DELETED",
+        targetType: "JobPosting",
+        targetId: id,
+        metadata: {
+          title: posting.title,
+          slug: posting.slug,
+        },
+        req,
+      });
+
+      return sendSuccess(res, null, "Job posting deleted successfully");
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+protectedRecruitingRouter.get(
+  "/postings/:id/preview-flyer.pdf",
+  adminGuard,
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const schoolId = req.user.schoolId;
+      const { id } = req.params;
+
+      const [school, posting] = await Promise.all([
+        db.school.findUnique({ where: { id: schoolId } }),
+        db.jobPosting.findFirst({
+          where: { id, schoolId },
+          include: {
+            department: { select: { value: true } },
+            position: { select: { value: true } },
+          },
+        }),
+      ]);
+
+      if (!school) throw new AppError("School not found", 404);
+      if (!posting) throw new AppError("Job posting not found", 404);
+
+      const clientBaseUrl = process.env.CLIENT_URL || "http://localhost:5173";
+      const publicUrl = `${clientBaseUrl}/careers/${school.slug || school.id}/${posting.slug}`;
+
+      const pdfBuffer = await generateJobPostingFlyerPdf(
+        {
+          name: school.name,
+          address: school.address,
+          phone: school.phone,
+          email: school.email,
+          logo: school.logo,
+        },
+        {
+          title: posting.title,
+          slug: posting.slug,
+          companyTagline: posting.companyTagline,
+          employmentType: posting.employmentType,
+          location: posting.location,
+          description: posting.description,
+          requirements: posting.requirements,
+          benefits: posting.benefits,
+          salaryType: posting.salaryType,
+          salaryRange: posting.salaryRange,
+          salaryFixedAmount: posting.salaryFixedAmount,
+          salaryCurrency: posting.salaryCurrency,
+          closingDate: posting.closingDate,
+          applicationDeadlineNote: posting.applicationDeadlineNote,
+          socialLinks: posting.socialLinks,
+          bannerImageUrl: posting.bannerImageUrl,
+          contactEmail: posting.contactEmail,
+          contactPhone: posting.contactPhone,
+          department: posting.department?.value,
+          position: posting.position?.value,
+        },
+        publicUrl,
+      );
+
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `inline; filename="preview-flyer-${posting.slug}.pdf"`);
+      return res.send(pdfBuffer);
     } catch (err) {
       next(err);
     }

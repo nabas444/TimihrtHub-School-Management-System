@@ -464,6 +464,7 @@ const createEmployeeSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
   middleName: z.string().optional().nullable(),
   lastName: z.string().min(1, "Last name is required"),
+  avatar: z.string().optional().nullable(),
   email: z.string().email().optional().nullable().or(z.literal("")),
   phone: z.string().optional().nullable(),
   gender: z.enum(["MALE", "FEMALE", "OTHER"]).optional().nullable(),
@@ -526,6 +527,7 @@ router.post(
           firstName: data.firstName,
           middleName: data.middleName || null,
           lastName: data.lastName,
+          avatar: data.avatar || null,
           email: data.email || null,
           phone: data.phone || null,
           gender: data.gender || null,
@@ -649,6 +651,7 @@ router.patch(
           ...(data.firstName !== undefined && { firstName: data.firstName }),
           ...(data.middleName !== undefined && { middleName: data.middleName || null }),
           ...(data.lastName !== undefined && { lastName: data.lastName }),
+          ...(data.avatar !== undefined && { avatar: data.avatar || null }),
           ...(data.email !== undefined && { email: data.email || null }),
           ...(data.phone !== undefined && { phone: data.phone || null }),
           ...(data.gender !== undefined && { gender: data.gender }),
@@ -695,7 +698,154 @@ router.patch(
         },
       });
 
+      // Synchronize employee status with linked User account and hostel assignments
+      if (data.status !== undefined) {
+        const isInactive =
+          data.status === EmployeeStatus.RESIGNED ||
+          data.status === EmployeeStatus.TERMINATED ||
+          data.status === EmployeeStatus.SUSPENDED;
+
+        if (isInactive) {
+          // Deactivate linked user login account
+          if (existing.userId) {
+            await db.user.update({
+              where: { id: existing.userId },
+              data: { isActive: false },
+            });
+          }
+
+          // Deactivate any active hostel staff assignments
+          await db.hostelStaffAssignment.updateMany({
+            where: { employeeId: id, isActive: true },
+            data: { isActive: false },
+          });
+
+          // Unassign from head warden of any hostel
+          await db.hostel.updateMany({
+            where: { wardenId: id, schoolId },
+            data: { wardenId: null },
+          });
+        } else if (data.status === EmployeeStatus.ACTIVE || data.status === EmployeeStatus.PROBATION) {
+          // Re-activate linked user login account
+          if (existing.userId) {
+            await db.user.update({
+              where: { id: existing.userId },
+              data: { isActive: true },
+            });
+          }
+        }
+      }
+
       return sendSuccess(res, updated, "Employee record updated successfully");
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DELETE EMPLOYEE
+// ─────────────────────────────────────────────────────────────────────────────
+
+router.delete(
+  "/:id",
+  adminGuard,
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const schoolId = req.user.schoolId;
+      const { id } = req.params;
+
+      const employee = await db.employee.findFirst({
+        where: { id, schoolId },
+      });
+
+      if (!employee) {
+        throw new AppError("Employee record not found", 404);
+      }
+
+      await db.$transaction(async (tx) => {
+        // 1. Unassign from head warden of hostels
+        await tx.hostel.updateMany({
+          where: { wardenId: id, schoolId },
+          data: { wardenId: null },
+        });
+
+        // 2. Delete hostel staff assignments
+        await tx.hostelStaffAssignment.deleteMany({
+          where: { employeeId: id },
+        });
+
+        // 3. Clear direct reports manager reference
+        await tx.employee.updateMany({
+          where: { managerId: id },
+          data: { managerId: null },
+        });
+
+        // 4. Delete documents
+        await tx.employeeDocument.deleteMany({
+          where: { employeeId: id },
+        });
+
+        // 5. Delete onboarding checklists & items
+        const checklists = await tx.onboardingChecklist.findMany({
+          where: { employeeId: id },
+          select: { id: true },
+        });
+        const clIds = checklists.map((c) => c.id);
+        if (clIds.length > 0) {
+          await tx.onboardingItem.deleteMany({
+            where: { checklistId: { in: clIds } },
+          });
+          await tx.onboardingChecklist.deleteMany({
+            where: { employeeId: id },
+          });
+        }
+
+        // 6. Delete offboarding records & items
+        const offboards = await tx.offboardingRecord.findMany({
+          where: { employeeId: id },
+          select: { id: true },
+        });
+        const offIds = offboards.map((o) => o.id);
+        if (offIds.length > 0) {
+          await tx.offboardingChecklistItem.deleteMany({
+            where: { offboardingId: { in: offIds } },
+          });
+          await tx.offboardingRecord.deleteMany({
+            where: { employeeId: id },
+          });
+        }
+
+        // 7. Delete performance reviews
+        await tx.performanceReview.deleteMany({
+          where: { employeeId: id },
+        });
+
+        // 8. Delete training records
+        await tx.staffTraining.deleteMany({
+          where: { employeeId: id },
+        });
+
+        // 9. Delete disciplinary records
+        await tx.staffDisciplinaryRecord.deleteMany({
+          where: { employeeId: id },
+        });
+
+        // 10. Delete the employee record
+        await tx.employee.delete({
+          where: { id },
+        });
+
+        // 11. If user was linked, deactivate user account
+        if (employee.userId) {
+          await tx.user.update({
+            where: { id: employee.userId },
+            data: { isActive: false },
+          });
+        }
+      });
+
+      return sendSuccess(res, { id, deleted: true }, "Employee removed successfully");
     } catch (err) {
       next(err);
     }
@@ -764,7 +914,7 @@ router.post(
 );
 
 const createUserAccountSchema = z.object({
-  role: z.enum(["TEACHER", "ADMIN", "FINANCE"]),
+  role: z.nativeEnum(Role),
   email: z.string().email("Valid email required"),
   password: z.string().min(6, "Password must be at least 6 characters"),
   specialization: z.string().optional(), // For teachers
@@ -802,7 +952,7 @@ router.post(
         const user = await tx.user.create({
           data: {
             schoolId,
-            role: data.role as Role,
+            role: data.role,
             email: data.email.toLowerCase(),
             password: hashedPassword,
             firstName: employee.firstName,
@@ -828,7 +978,11 @@ router.post(
               joinedAt: employee.hireDate,
             },
           });
-        } else if (data.role === Role.ADMIN || data.role === Role.FINANCE) {
+        } else if (
+          data.role === Role.ADMIN ||
+          data.role === Role.SUPER_ADMIN ||
+          data.role === Role.FINANCE
+        ) {
           await tx.adminProfile.create({
             data: {
               userId: user.id,

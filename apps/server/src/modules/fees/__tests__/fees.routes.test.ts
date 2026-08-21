@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const mockDb = {
-  feeInvoice: { findFirst: vi.fn(), update: vi.fn() },
-  feePayment: { create: vi.fn() },
-};
+const { mockDb } = vi.hoisted(() => ({
+  mockDb: {
+    feeInvoice: { findFirst: vi.fn(), update: vi.fn() },
+    feePayment: { create: vi.fn() },
+  },
+}));
 vi.mock("../../../config/database", () => ({ db: mockDb }));
 vi.mock("../../../config/socket", () => ({ emitToUser: vi.fn() }));
 vi.mock("../../../utils/pdf", () => ({ generateFeeReceiptPdf: vi.fn() }));

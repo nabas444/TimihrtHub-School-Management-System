@@ -381,10 +381,7 @@ router.get(
       }
 
       if (!canViewBehaviourSummary(req.user, studentId, isLinkedParent)) {
-        throw new AppError(
-          "Not authorized to view this student's behaviour record",
-          403,
-        );
+        throw new AppError("Not authorized to view this student's behaviour record", 403);
       }
 
       sendSuccess(
