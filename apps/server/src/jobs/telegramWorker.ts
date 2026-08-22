@@ -70,11 +70,15 @@ export const enqueueTelegramJobPost = async (
   data: TelegramPostJobData,
   options?: { delay?: number; attempts?: number },
 ) => {
-  await telegramQueue.add("post", data, {
-    delay: options?.delay,
-    attempts: options?.attempts ?? 3,
-    backoff: { type: "exponential", delay: 2000 },
-    removeOnComplete: 100,
-    removeOnFail: 50,
-  });
+  try {
+    await telegramQueue.add("post", data, {
+      delay: options?.delay,
+      attempts: options?.attempts ?? 3,
+      backoff: { type: "exponential", delay: 2000 },
+      removeOnComplete: 100,
+      removeOnFail: 50,
+    });
+  } catch (err: any) {
+    logger.warn(`Telegram queue unavailable, skipped background post for ${data.postingId}:`, err.message);
+  }
 };

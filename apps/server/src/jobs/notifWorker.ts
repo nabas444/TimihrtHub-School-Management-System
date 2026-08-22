@@ -138,23 +138,27 @@ notifQueue.on('error', (err) => logger.debug(`NotifQueue notice: ${err.message}`
 
 // ── Schedule recurring jobs ───────────────────────────────────────────────────
 export const scheduleRecurringJobs = async (schoolId: string) => {
-  // Assignment reminders — daily at 8am
-  await notifQueue.add('assignment-reminder', { type: 'ASSIGNMENT_REMINDER', schoolId }, {
-    repeat: { pattern: '0 8 * * *' },
-    jobId: `assignment-reminder-${schoolId}`,
-  });
+  try {
+    // Assignment reminders — daily at 8am
+    await notifQueue.add('assignment-reminder', { type: 'ASSIGNMENT_REMINDER', schoolId }, {
+      repeat: { pattern: '0 8 * * *' },
+      jobId: `assignment-reminder-${schoolId}`,
+    });
 
-  // Fee overdue check — daily at midnight
-  await notifQueue.add('fee-overdue', { type: 'FEE_OVERDUE', schoolId }, {
-    repeat: { pattern: '0 0 * * *' },
-    jobId: `fee-overdue-${schoolId}`,
-  });
+    // Fee overdue check — daily at midnight
+    await notifQueue.add('fee-overdue', { type: 'FEE_OVERDUE', schoolId }, {
+      repeat: { pattern: '0 0 * * *' },
+      jobId: `fee-overdue-${schoolId}`,
+    });
 
-  // Exam reminders — daily at 9am
-  await notifQueue.add('exam-reminder', { type: 'EXAM_REMINDER', schoolId }, {
-    repeat: { pattern: '0 9 * * *' },
-    jobId: `exam-reminder-${schoolId}`,
-  });
+    // Exam reminders — daily at 9am
+    await notifQueue.add('exam-reminder', { type: 'EXAM_REMINDER', schoolId }, {
+      repeat: { pattern: '0 9 * * *' },
+      jobId: `exam-reminder-${schoolId}`,
+    });
 
-  logger.info(`Scheduled recurring jobs for school ${schoolId}`);
+    logger.info(`Scheduled recurring jobs for school ${schoolId}`);
+  } catch (err: any) {
+    logger.warn(`Recurring jobs scheduling skipped for school ${schoolId}:`, err.message);
+  }
 };
