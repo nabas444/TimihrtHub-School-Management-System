@@ -43,13 +43,17 @@ emailWorker.on('failed', (job, err) => logger.error(`Email job ${job?.id} failed
 
 // ── Helper to queue emails ────────────────────────────────────────────────────
 export const sendEmail = async (data: EmailJob, options?: { delay?: number; attempts?: number }) => {
-  await emailQueue.add('send', data, {
-    delay: options?.delay,
-    attempts: options?.attempts ?? 3,
-    backoff: { type: 'exponential', delay: 2000 },
-    removeOnComplete: 100,
-    removeOnFail: 50,
-  });
+  try {
+    await emailQueue.add('send', data, {
+      delay: options?.delay,
+      attempts: options?.attempts ?? 3,
+      backoff: { type: 'exponential', delay: 2000 },
+      removeOnComplete: 100,
+      removeOnFail: 50,
+    });
+  } catch (err) {
+    logger.warn(`Email queue unavailable, skipped background email to ${data.to}:`, err);
+  }
 };
 
 // ── Pre-built email templates ─────────────────────────────────────────────────

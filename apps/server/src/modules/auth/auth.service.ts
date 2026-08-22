@@ -95,11 +95,15 @@ export const registerSchool = async (data: {
     `New school registered: ${result.school.name} (${result.school.id})`,
   );
 
-  await sendWelcomeEmail(
-    result.admin.email,
-    `${result.admin.firstName} ${result.admin.lastName}`,
-    result.admin.role,
-  );
+  try {
+    await sendWelcomeEmail(
+      result.admin.email,
+      `${result.admin.firstName} ${result.admin.lastName}`,
+      result.admin.role,
+    );
+  } catch (emailErr) {
+    logger.warn("Welcome email could not be sent:", emailErr);
+  }
 
   return result;
 };
@@ -478,12 +482,16 @@ export const requestPasswordReset = async (email: string) => {
   });
 
   const resetLink = `${process.env.CLIENT_URL}/reset-password?token=${token}`;
-  await sendPasswordResetEmail(
-    email,
-    `${user.firstName} ${user.lastName}`,
-    resetLink,
-  );
-  logger.info(`Password reset email queued for ${email}`);
+  try {
+    await sendPasswordResetEmail(
+      email,
+      `${user.firstName} ${user.lastName}`,
+      resetLink,
+    );
+    logger.info(`Password reset email queued for ${email}`);
+  } catch (emailErr) {
+    logger.warn(`Password reset email could not be queued for ${email}:`, emailErr);
+  }
 
   // Token is still returned so callers/tests can exercise the flow without
   // needing a live SMTP connection; the actual delivery path is now the email queue above.
