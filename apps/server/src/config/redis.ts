@@ -33,17 +33,18 @@ const resolvedRedisUrl = getRedisUrl();
 
 // Main Redis client
 export const redis = new Redis(resolvedRedisUrl, redisOptions);
+redis.on('error', (err) => logger.warn(`Redis connection error: ${err.message}`));
 
 // Separate connection for BullMQ subscribers (can't share)
 export const redisSub = new Redis(resolvedRedisUrl, redisOptions);
+redisSub.on('error', (err) => logger.warn(`RedisSub connection error: ${err.message}`));
 
 export const connectRedis = async () => {
   try {
     await redis.connect();
     logger.info('✅ Redis connected');
   } catch (err) {
-    logger.error('❌ Redis connection failed:', err);
-    process.exit(1);
+    logger.warn('⚠️ Redis connection warning (cache will run in degraded mode):', err);
   }
 };
 

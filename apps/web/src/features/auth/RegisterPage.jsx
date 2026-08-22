@@ -22,7 +22,10 @@ export default function RegisterPage() {
       toast.success('School registered! Please log in.');
       navigate('/login');
     } catch (err) {
-      toast.error(err.response?.data?.message ?? 'Registration failed');
+      const errorMsg = err.response?.data?.errors?.length
+        ? err.response.data.errors.map((e) => e.message || `${e.field}: invalid`).join(' · ')
+        : err.response?.data?.message ?? 'Registration failed';
+      toast.error(errorMsg);
     } finally { setLoading(false); }
   };
 

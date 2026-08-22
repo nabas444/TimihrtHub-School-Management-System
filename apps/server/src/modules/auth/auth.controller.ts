@@ -5,14 +5,14 @@ import { sendSuccess, sendCreated } from '../../utils/response';
 
 // ── Validation schemas ───────────────────────────────────────────────────────
 const RegisterSchema = z.object({
-  schoolName: z.string().min(2).max(100),
-  schoolEmail: z.string().email(),
-  schoolPhone: z.string().optional(),
-  adminFirstName: z.string().min(1).max(50),
-  adminLastName: z.string().min(1).max(50),
-  adminEmail: z.string().email(),
-  password: z.string().min(8).max(64),
-  country: z.string().optional(),
+  schoolName: z.string().min(2, "School name must be at least 2 characters").max(100),
+  schoolEmail: z.string().email("Invalid school email address"),
+  schoolPhone: z.string().optional().nullable().or(z.literal("")),
+  adminFirstName: z.string().min(1, "Admin first name is required").max(50),
+  adminLastName: z.string().min(1, "Admin last name is required").max(50),
+  adminEmail: z.string().email("Invalid admin email address"),
+  password: z.string().min(8, "Password must be at least 8 characters").max(64),
+  country: z.string().optional().nullable().or(z.literal("")),
 });
 
 const LoginSchema = z.object({
