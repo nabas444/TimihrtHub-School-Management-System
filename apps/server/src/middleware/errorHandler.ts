@@ -67,15 +67,12 @@ export const errorHandler = (
     return;
   }
 
-  // Unknown errors — log and return generic message
+  // Unknown errors — log and return descriptive message
   logger.error('Unhandled error:', { message: err.message, stack: err.stack });
 
   res.status(500).json({
     success: false,
-    message:
-      process.env.NODE_ENV === 'production'
-        ? 'Internal server error'
-        : err.message,
+    message: err.message || 'Internal server error',
   });
 };
 
