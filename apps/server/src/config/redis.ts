@@ -1,23 +1,41 @@
-import { Redis } from 'ioredis';
+import { Redis, RedisOptions } from 'ioredis';
 import { logger } from '../utils/logger';
 
-const redisOptions = {
+function getRedisUrl(): string {
+  let rawUrl = (process.env.REDIS_URL ?? 'redis://localhost:6379').trim();
+
+  // Remove wrapping quotes if present
+  rawUrl = rawUrl.replace(/^["']|["']$/g, '');
+
+  // If user accidentally copied the redis-cli command (e.g. "redis-cli --tls -u redis://...")
+  if (rawUrl.includes('-u ')) {
+    const parts = rawUrl.split('-u ');
+    rawUrl = parts[parts.length - 1].trim();
+  } else if (rawUrl.startsWith('redis-cli ')) {
+    rawUrl = rawUrl.replace(/^redis-cli\s+/, '').trim();
+  }
+
+  // For Upstash or cloud TLS endpoints, ensure rediss:// protocol is used
+  if (rawUrl.includes('upstash.io') && rawUrl.startsWith('redis://')) {
+    rawUrl = rawUrl.replace(/^redis:\/\//, 'rediss://');
+  }
+
+  return rawUrl;
+}
+
+const redisOptions: RedisOptions = {
   maxRetriesPerRequest: null, // required for BullMQ
   enableReadyCheck: false,
   lazyConnect: true,
 };
 
+const resolvedRedisUrl = getRedisUrl();
+
 // Main Redis client
-export const redis = new Redis(
-  process.env.REDIS_URL ?? 'redis://localhost:6379',
-  redisOptions,
-);
+export const redis = new Redis(resolvedRedisUrl, redisOptions);
 
 // Separate connection for BullMQ subscribers (can't share)
-export const redisSub = new Redis(
-  process.env.REDIS_URL ?? 'redis://localhost:6379',
-  redisOptions,
-);
+export const redisSub = new Redis(resolvedRedisUrl, redisOptions);
 
 export const connectRedis = async () => {
   try {
