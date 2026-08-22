@@ -20,8 +20,9 @@ export const useAuthStore = create(
             password,
             schoolSlug,
           });
-          const { accessToken, user } = res.data.data;
+          const { accessToken, refreshToken, user } = res.data.data;
           localStorage.setItem("accessToken", accessToken);
+          if (refreshToken) localStorage.setItem("refreshToken", refreshToken);
           connectSocket(accessToken);
           set({ user, accessToken, isAuthenticated: true, isLoading: false });
           return { success: true };
@@ -38,8 +39,9 @@ export const useAuthStore = create(
         set({ isLoading: true });
         try {
           const res = await api.post("/auth/google", { credential });
-          const { accessToken, user } = res.data.data;
+          const { accessToken, refreshToken, user } = res.data.data;
           localStorage.setItem("accessToken", accessToken);
+          if (refreshToken) localStorage.setItem("refreshToken", refreshToken);
           connectSocket(accessToken);
           set({ user, accessToken, isAuthenticated: true, isLoading: false });
           return { success: true };
@@ -57,6 +59,7 @@ export const useAuthStore = create(
           await api.post("/auth/logout");
         } catch {}
         localStorage.removeItem("accessToken");
+        localStorage.removeItem("refreshToken");
         disconnectSocket();
         queryClient.clear();
         set({ user: null, accessToken: null, isAuthenticated: false });

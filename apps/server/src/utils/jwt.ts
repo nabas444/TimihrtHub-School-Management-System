@@ -9,13 +9,13 @@ export interface JwtPayload {
 }
 
 export const signAccessToken = (payload: JwtPayload): string =>
-  (jwt.sign as any)(payload, process.env.JWT_ACCESS_SECRET ?? "", {
-    expiresIn: process.env.JWT_ACCESS_EXPIRES_IN ?? "15m",
+  (jwt.sign as any)(payload, process.env.JWT_ACCESS_SECRET ?? "timhirthub-jwt-secret-key-production-change-in-env", {
+    expiresIn: process.env.JWT_ACCESS_EXPIRES_IN ?? "1d",
   });
 
 export const signRefreshToken = (payload: JwtPayload): string =>
-  (jwt.sign as any)(payload, process.env.JWT_REFRESH_SECRET ?? "", {
-    expiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? "7d",
+  (jwt.sign as any)(payload, process.env.JWT_REFRESH_SECRET ?? "timhirthub-jwt-refresh-secret-production-change-in-env", {
+    expiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? "30d",
   });
 
 export const verifyAccessToken = (token: string): JwtPayload => {

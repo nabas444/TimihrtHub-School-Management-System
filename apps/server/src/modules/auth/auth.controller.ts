@@ -63,15 +63,23 @@ export const login = async (
     const { email, password, schoolSlug } = LoginSchema.parse(req.body);
     const result = await AuthService.login(email, password, schoolSlug, req);
 
-    // Set refresh token as HttpOnly cookie
+    // Set refresh token cookie (sameSite: 'none' for cross-origin Vercel + Render)
     res.cookie('refreshToken', result.refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 
-    sendSuccess(res, { accessToken: result.accessToken, user: result.user }, 'Login successful');
+    sendSuccess(
+      res,
+      {
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+        user: result.user,
+      },
+      'Login successful',
+    );
   } catch (err) {
     next(err);
   }
@@ -90,11 +98,19 @@ export const googleLogin = async (
     res.cookie('refreshToken', result.refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    sendSuccess(res, { accessToken: result.accessToken, user: result.user }, 'Login successful');
+    sendSuccess(
+      res,
+      {
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+        user: result.user,
+      },
+      'Login successful',
+    );
   } catch (err) {
     next(err);
   }
@@ -106,7 +122,7 @@ export const refresh = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const token = req.cookies?.refreshToken ?? req.body.refreshToken;
+    const token = req.cookies?.refreshToken ?? req.body?.refreshToken;
     if (!token) {
       res.status(401).json({ success: false, message: 'Refresh token required' });
       return;
@@ -115,10 +131,13 @@ export const refresh = async (
     res.cookie('refreshToken', tokens.refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
-    sendSuccess(res, { accessToken: tokens.accessToken });
+    sendSuccess(res, {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+    });
   } catch (err) {
     next(err);
   }

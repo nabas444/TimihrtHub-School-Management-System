@@ -59,15 +59,20 @@ api.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        const res = await api.post("/auth/refresh");
-        const { accessToken } = res.data.data;
+        const storedRefreshToken = localStorage.getItem("refreshToken");
+        const res = await api.post("/auth/refresh", {
+          refreshToken: storedRefreshToken,
+        });
+        const { accessToken, refreshToken } = res.data.data;
         localStorage.setItem("accessToken", accessToken);
+        if (refreshToken) localStorage.setItem("refreshToken", refreshToken);
         processQueue(null, accessToken);
         originalRequest.headers.Authorization = `Bearer ${accessToken}`;
         return api(originalRequest);
       } catch (refreshError) {
         processQueue(refreshError, null);
         localStorage.removeItem("accessToken");
+        localStorage.removeItem("refreshToken");
         window.location.href = "/login";
         return Promise.reject(refreshError);
       } finally {
