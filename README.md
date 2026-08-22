@@ -1,6 +1,25 @@
-# TimhirtHub — School Management Platform
+<div align="center">
 
-> A full-stack SaaS school management platform connecting **Students · Teachers · Parents · Administrators**
+# 🎓 TimhirtHub — School Management Platform
+
+**A full-stack SaaS school management platform connecting Students · Teachers · Parents · Administrators**
+
+[![Live Demo](https://img.shields.io/badge/🌐_Live_Demo-Vercel-black?style=for-the-badge&logo=vercel)](https://timihrt-hub-school-management-syste.vercel.app/login)
+[![API](https://img.shields.io/badge/⚙️_API-Render-46E3B7?style=for-the-badge&logo=render&logoColor=white)](https://timhirthub-api.onrender.com/health)
+
+[![Node.js](https://img.shields.io/badge/Node.js-20+-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](#-license)
+
+**[🚀 Try the Live App](https://timihrt-hub-school-management-syste.vercel.app/login)** · **[📖 API Health Check](https://timhirthub-api.onrender.com/health)** · **[🐛 Report Bug](../../issues)** · **[✨ Request Feature](../../issues)**
+
+</div>
+
+---
+
+> ⚠️ **Note:** The backend is hosted on Render's free tier, which spins down after inactivity. The **first request may take 30–60 seconds** to wake the server — please be patient on first load.
 
 ---
 
@@ -26,8 +45,8 @@ timhirthub/
 ### 1. Clone & install
 
 ```bash
-git clone https://github.com/yourorg/timhirthub.git
-cd timhirthub
+git clone https://github.com/nabas444/TimihrtHub-School-Management-System.git
+cd TimihrtHub-School-Management-System
 npm install
 ```
 
@@ -61,7 +80,19 @@ Open http://localhost:3000
 
 ---
 
+## 🌐 Live Deployment
+
+| Layer        | URL                                                                                                                        | Host   |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------- | ------ |
+| **Frontend** | [timihrt-hub-school-management-syste.vercel.app](https://timihrt-hub-school-management-syste.vercel.app/login)             | Vercel |
+| **Backend**  | [timhirthub-api.onrender.com](https://timhirthub-api.onrender.com)                                                          | Render |
+| **Health**   | [timhirthub-api.onrender.com/health](https://timhirthub-api.onrender.com/health)                                           | Render |
+
+---
+
 ## 🔐 Demo Login Credentials
+
+Use the credentials below on the [live demo](https://timihrt-hub-school-management-syste.vercel.app/login) or your local setup:
 
 | Role    | Email                  | Password    |
 | ------- | ---------------------- | ----------- |
@@ -210,6 +241,17 @@ GET        /notifications
 | `announcement:new` | Server → Client | New school announcement |
 | `presence:online`  | Server → Client | User came online        |
 | `presence:offline` | Server → Client | User went offline       |
+
+---
+
+## ☁️ Deploying Your Own Instance
+
+This repo includes a [`render.yaml`](./render.yaml) blueprint for one-click backend deployment:
+
+- **Backend (Render):** New + → Blueprint → point at this repo → Render provisions the web service + PostgreSQL database automatically from `render.yaml`.
+- **Frontend (Vercel):** Import this repo → set **Root Directory** to `apps/web` → set `VITE_API_URL` to your Render API URL → Deploy.
+
+For full step-by-step instructions (env vars, Redis setup, CORS config), see the [Environment Variables](#-environment-variables) section below.
 
 ---
 
