@@ -555,29 +555,21 @@ export default function LandingPage() {
   const servicesRef = useRef(null);
   const resourcesRef = useRef(null);
   const servicesSectionRef = useRef(null);
-  const heroIframeRef = useRef(null);
-  const servicesIframeRef = useRef(null);
+  const heroVideoRef = useRef(null);
+  const servicesVideoRef = useRef(null);
 
   const toggleHeroAudio = () => {
-    if (heroIframeRef.current?.contentWindow) {
-      const nextMuted = !isHeroMuted;
-      const func = nextMuted ? "mute" : "unMute";
-      heroIframeRef.current.contentWindow.postMessage(
-        JSON.stringify({ event: "command", func, args: [] }),
-        "*"
-      );
+    if (heroVideoRef.current) {
+      const nextMuted = !heroVideoRef.current.muted;
+      heroVideoRef.current.muted = nextMuted;
       setIsHeroMuted(nextMuted);
     }
   };
 
   const toggleServicesAudio = () => {
-    if (servicesIframeRef.current?.contentWindow) {
-      const nextMuted = !isServicesMuted;
-      const func = nextMuted ? "mute" : "unMute";
-      servicesIframeRef.current.contentWindow.postMessage(
-        JSON.stringify({ event: "command", func, args: [] }),
-        "*"
-      );
+    if (servicesVideoRef.current) {
+      const nextMuted = !servicesVideoRef.current.muted;
+      servicesVideoRef.current.muted = nextMuted;
       setIsServicesMuted(nextMuted);
     }
   };
@@ -699,34 +691,9 @@ export default function LandingPage() {
       videoObserver.observe(servicesSectionRef.current);
     }
 
-    // YouTube hero playback message listener
-    const handleYouTubeMessage = (e) => {
-      try {
-        const data = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
-        if (data?.event === "onStateChange" || data?.info?.playerState !== undefined) {
-          const state = data?.info?.playerState ?? data?.info;
-          if (state === 1) {
-            setIsHeroVideoPlaying(true);
-          } else if (state === 2 || state === 0) {
-            setIsHeroVideoPlaying(false);
-          }
-        }
-      } catch {
-        // non-JSON message
-      }
-    };
-    window.addEventListener("message", handleYouTubeMessage);
-
-    // Fallback: If video starts without postMessage callback within 3.5s
-    const heroFallbackTimer = setTimeout(() => {
-      setIsHeroVideoPlaying(true);
-    }, 3500);
-
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
       document.removeEventListener("keydown", handleEscape);
-      window.removeEventListener("message", handleYouTubeMessage);
-      clearTimeout(heroFallbackTimer);
       revealObserver.disconnect();
       if (videoObserver) videoObserver.disconnect();
     };
@@ -1020,18 +987,31 @@ export default function LandingPage() {
           />
         </div>
 
-        {/* Background YouTube video layer - Natural 16:9 unzoomed framing */}
+        {/* Background Cloudinary Video Layer - Fast CDN stream with auto quality */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none -z-0">
-          <iframe
-            ref={heroIframeRef}
-            src="https://www.youtube.com/embed/GWsBXpZhCxA?autoplay=1&mute=1&loop=1&playlist=GWsBXpZhCxA&controls=0&modestbranding=1&rel=0&showinfo=0&iv_load_policy=3&disablekb=1&playsinline=1&enablejsapi=1"
-            title="TimhirtHub Hero Background"
-            allow="autoplay; encrypted-media"
-            className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[100vw] min-w-[177.77vh] h-[56.25vw] min-h-full pointer-events-none transition-opacity duration-1000 ease-in-out ${
+          <video
+            ref={heroVideoRef}
+            autoPlay
+            loop
+            muted={isHeroMuted}
+            playsInline
+            preload="auto"
+            poster="https://res.cloudinary.com/w1ouxguh/video/upload/so_0,q_auto,f_auto/School_Management_System_-_How_To_A_To_Z_1080p_h264_youtube.jpg"
+            onPlay={() => setIsHeroVideoPlaying(true)}
+            onPlaying={() => setIsHeroVideoPlaying(true)}
+            className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[100vw] min-w-[177.77vh] h-[56.25vw] min-h-full object-cover pointer-events-none transition-opacity duration-1000 ease-in-out ${
               isHeroVideoPlaying ? "opacity-100" : "opacity-0"
             }`}
-            tabIndex={-1}
-          />
+          >
+            <source
+              src="https://res.cloudinary.com/w1ouxguh/video/upload/q_auto,vc_auto/School_Management_System_-_How_To_A_To_Z_1080p_h264_youtube.webm"
+              type="video/webm"
+            />
+            <source
+              src="https://res.cloudinary.com/w1ouxguh/video/upload/q_auto,vc_auto/School_Management_System_-_How_To_A_To_Z_1080p_h264_youtube.mp4"
+              type="video/mp4"
+            />
+          </video>
         </div>
 
         {/* Deep Left-to-Right Scrim Gradient for 100% Typography Contrast */}
@@ -1244,17 +1224,25 @@ export default function LandingPage() {
         <div className="relative aspect-video w-full overflow-hidden rounded-3xl border border-gray-200/80 dark:border-gray-800 bg-gray-950 shadow-2xl">
           {servicesVideoVisible && (
             <>
-              {/* Overscan crop: scaled and shifted so top title bar & bottom branding are completely clipped off */}
-              <iframe
-                ref={servicesIframeRef}
-                src="https://www.youtube.com/embed/dQknNQcM4cU?autoplay=1&mute=1&loop=1&playlist=dQknNQcM4cU&controls=0&modestbranding=1&rel=0&showinfo=0&iv_load_policy=3&disablekb=1&playsinline=1&enablejsapi=1"
-                title="TimhirtHub Services Overview"
-                allow="autoplay; encrypted-media; picture-in-picture"
-                className="absolute -top-[12%] -left-[12%] h-[124%] w-[124%] object-cover pointer-events-none"
-                tabIndex={-1}
-              />
-              {/* Transparent shield intercepting mouse interactions */}
-              <div className="absolute inset-0 z-10 pointer-events-auto bg-transparent" />
+              <video
+                ref={servicesVideoRef}
+                autoPlay
+                loop
+                muted={isServicesMuted}
+                playsInline
+                preload="metadata"
+                poster="https://res.cloudinary.com/w1ouxguh/video/upload/so_0,q_auto,f_auto/School_Managing_system_-_How_To_A_To_Z_1080p_h264_youtube.jpg"
+                className="w-full h-full object-cover rounded-3xl"
+              >
+                <source
+                  src="https://res.cloudinary.com/w1ouxguh/video/upload/q_auto,vc_auto/School_Managing_system_-_How_To_A_To_Z_1080p_h264_youtube.webm"
+                  type="video/webm"
+                />
+                <source
+                  src="https://res.cloudinary.com/w1ouxguh/video/upload/q_auto,vc_auto/School_Managing_system_-_How_To_A_To_Z_1080p_h264_youtube.mp4"
+                  type="video/mp4"
+                />
+              </video>
 
               {/* Floating audio control pill */}
               <div className="absolute bottom-4 right-4 z-20">
