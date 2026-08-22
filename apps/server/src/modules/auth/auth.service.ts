@@ -120,22 +120,35 @@ export const login = async (
   const cleanEmail = email.trim().toLowerCase();
   const cleanSlug = schoolSlug?.trim().toLowerCase();
 
-  const whereClause: any = {
-    email: { equals: cleanEmail, mode: "insensitive" },
-  };
+  let user = null;
 
   if (cleanSlug) {
-    whereClause.school = {
-      slug: { equals: cleanSlug, mode: "insensitive" },
-    };
+    // 1. Try exact or prefix slug match (handles generated timestamp slugs like demo-school-1724...)
+    user = await db.user.findFirst({
+      where: {
+        email: { equals: cleanEmail, mode: "insensitive" },
+        school: {
+          OR: [
+            { slug: { equals: cleanSlug, mode: "insensitive" } },
+            { slug: { startsWith: cleanSlug, mode: "insensitive" } },
+          ],
+        },
+      },
+      include: {
+        school: { select: { id: true, name: true, slug: true, isActive: true } },
+      },
+    });
   }
 
-  const user = await db.user.findFirst({
-    where: whereClause,
-    include: {
-      school: { select: { id: true, name: true, slug: true, isActive: true } },
-    },
-  });
+  // 2. Fallback to direct email lookup
+  if (!user) {
+    user = await db.user.findFirst({
+      where: { email: { equals: cleanEmail, mode: "insensitive" } },
+      include: {
+        school: { select: { id: true, name: true, slug: true, isActive: true } },
+      },
+    });
+  }
 
   if (!user) {
     if (cleanSlug) {
