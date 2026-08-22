@@ -28,12 +28,12 @@ const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 export const registerSchool = async (data: {
   schoolName: string;
   schoolEmail: string;
-  schoolPhone?: string;
+  schoolPhone?: string | null;
   adminFirstName: string;
   adminLastName: string;
   adminEmail: string;
   password: string;
-  country?: string;
+  country?: string | null;
 }) => {
   const existingAdmin = await db.user.findFirst({
     where: { email: data.adminEmail },
