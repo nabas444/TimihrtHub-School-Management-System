@@ -95,14 +95,9 @@ Open http://localhost:3000
 Use the credentials below on the [live demo](https://timihrt-hub-school-management-syste.vercel.app/login) or your local setup:
 
 | Role    | Email                  | Password    |
-| ------- | ---------------------- | ----------- |
-| Admin   | admin@demoschool.edu   | password123 |
-| Teacher | teacher@demoschool.edu | password123 |
-| Student | student@demoschool.edu | password123 |
-| Parent  | parent@demoschool.edu  | password123 |
-
+| ------- | ---------------------- | -----------   |
+| Admin   | natnaelabebe848@gmail.com| password123 |
 ---
-
 ## ✨ Features
 
 ### 📚 Academic Management
