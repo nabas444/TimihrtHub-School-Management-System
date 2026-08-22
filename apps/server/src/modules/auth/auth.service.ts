@@ -35,13 +35,15 @@ export const registerSchool = async (data: {
   password: string;
   country?: string | null;
 }) => {
+  const cleanEmail = data.adminEmail.trim().toLowerCase();
   const existingAdmin = await db.user.findFirst({
-    where: { email: data.adminEmail },
+    where: { email: { equals: cleanEmail, mode: "insensitive" } },
   });
   if (existingAdmin) throw new AppError("Email already in use", 409);
 
   const slug = data.schoolName
     .toLowerCase()
+    .trim()
     .replace(/[^a-z0-9]/g, "-")
     .replace(/-+/g, "-")
     .slice(0, 50);
@@ -57,11 +59,11 @@ export const registerSchool = async (data: {
   const result = await db.$transaction(async (tx) => {
     const school = await tx.school.create({
       data: {
-        name: data.schoolName,
+        name: data.schoolName.trim(),
         slug: finalSlug,
-        email: data.schoolEmail,
-        phone: data.schoolPhone,
-        country: data.country ?? "Ethiopia",
+        email: data.schoolEmail.trim().toLowerCase(),
+        phone: data.schoolPhone?.trim() || null,
+        country: data.country?.trim() || "Ethiopia",
         settings: { create: {} },
         subscription: {
           create: {
@@ -77,10 +79,10 @@ export const registerSchool = async (data: {
       data: {
         schoolId: school.id,
         role: Role.ADMIN,
-        email: data.adminEmail,
+        email: cleanEmail,
         password: hashedPassword,
-        firstName: data.adminFirstName,
-        lastName: data.adminLastName,
+        firstName: data.adminFirstName.trim(),
+        lastName: data.adminLastName.trim(),
         isEmailVerified: false,
         adminProfile: {
           create: { isSuperAdmin: true },
@@ -115,9 +117,18 @@ export const login = async (
   schoolSlug?: string,
   req?: Request,
 ) => {
-  const whereClause = schoolSlug
-    ? { email, school: { slug: schoolSlug } }
-    : { email };
+  const cleanEmail = email.trim().toLowerCase();
+  const cleanSlug = schoolSlug?.trim().toLowerCase();
+
+  const whereClause: any = {
+    email: { equals: cleanEmail, mode: "insensitive" },
+  };
+
+  if (cleanSlug) {
+    whereClause.school = {
+      slug: { equals: cleanSlug, mode: "insensitive" },
+    };
+  }
 
   const user = await db.user.findFirst({
     where: whereClause,
@@ -127,8 +138,10 @@ export const login = async (
   });
 
   if (!user) {
-    if (schoolSlug) {
-      const sch = await db.school.findFirst({ where: { slug: schoolSlug } });
+    if (cleanSlug) {
+      const sch = await db.school.findFirst({
+        where: { slug: { equals: cleanSlug, mode: "insensitive" } },
+      });
       if (sch) {
         await recordAuditEvent({
           schoolId: sch.id,

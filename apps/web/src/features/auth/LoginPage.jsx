@@ -13,7 +13,11 @@ export default function LoginPage() {
   const location = useLocation();
   const from = location.state?.from?.pathname ?? "/dashboard";
 
-  const [form, setForm] = useState({ email: "", password: "", schoolSlug: "" });
+  const [form, setForm] = useState({
+    email: location.state?.email ?? "",
+    password: "",
+    schoolSlug: location.state?.schoolSlug ?? "",
+  });
   const [showPwd, setShowPwd] = useState(false);
 
   const handleSubmit = async (e) => {

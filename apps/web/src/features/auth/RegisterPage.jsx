@@ -18,9 +18,10 @@ export default function RegisterPage() {
     e.preventDefault();
     setLoading(true);
     try {
-      await api.post('/auth/register', form);
-      toast.success('School registered! Please log in.');
-      navigate('/login');
+      const res = await api.post('/auth/register', form);
+      const schoolSlug = res.data?.data?.schoolSlug;
+      toast.success('School registered! Please log in with your admin credentials.');
+      navigate('/login', { state: { email: form.adminEmail, schoolSlug } });
     } catch (err) {
       const errorMsg = err.response?.data?.errors?.length
         ? err.response.data.errors.map((e) => e.message || `${e.field}: invalid`).join(' · ')
