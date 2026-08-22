@@ -445,18 +445,32 @@ protectedRecruitingRouter.get(
   },
 );
 
+const emptyToNull = (val: unknown) => {
+  if (typeof val === "string" && val.trim() === "") return null;
+  return val ?? null;
+};
+
+const parseOptionalNumber = (val: unknown) => {
+  if (val === "" || val === null || val === undefined) return null;
+  const num = Number(val);
+  return isNaN(num) ? null : num;
+};
+
 const createRequisitionSchema = z.object({
   title: z.string().min(2, "Job title is required"),
-  departmentId: z.string().optional().nullable(),
-  positionId: z.string().optional().nullable(),
-  vacanciesCount: z.number().min(1).default(1),
+  departmentId: z.preprocess(emptyToNull, z.string().optional().nullable()),
+  positionId: z.preprocess(emptyToNull, z.string().optional().nullable()),
+  vacanciesCount: z.preprocess(
+    (v) => (v === "" || v === null || v === undefined ? 1 : Number(v)),
+    z.number().min(1).default(1),
+  ),
   employmentType: z.nativeEnum(EmploymentType).default(EmploymentType.FULL_TIME),
-  reason: z.string().optional().nullable(),
-  salaryMin: z.number().optional().nullable(),
-  salaryMax: z.number().optional().nullable(),
-  description: z.string().optional().nullable(),
-  justification: z.string().optional().nullable(),
-  targetStartDate: z.string().optional().nullable(),
+  reason: z.preprocess(emptyToNull, z.string().optional().nullable()),
+  salaryMin: z.preprocess(parseOptionalNumber, z.number().optional().nullable()),
+  salaryMax: z.preprocess(parseOptionalNumber, z.number().optional().nullable()),
+  description: z.preprocess(emptyToNull, z.string().optional().nullable()),
+  justification: z.preprocess(emptyToNull, z.string().optional().nullable()),
+  targetStartDate: z.preprocess(emptyToNull, z.string().optional().nullable()),
   autoApprove: z.boolean().default(false),
 });
 
@@ -596,17 +610,6 @@ const socialLinkSchema = z.object({
     z.string().url("Must be a valid URL (e.g. https://t.me/TimhirtHub)"),
   ),
 });
-
-const emptyToNull = (val: unknown) => {
-  if (typeof val === "string" && val.trim() === "") return null;
-  return val ?? null;
-};
-
-const parseOptionalNumber = (val: unknown) => {
-  if (val === "" || val === null || val === undefined) return null;
-  const num = Number(val);
-  return isNaN(num) ? null : num;
-};
 
 const filterEmptySocialLinks = (val: unknown) => {
   if (!Array.isArray(val)) return [];

@@ -191,12 +191,44 @@ export default function RecruitingPage() {
 
   // ── Mutations ──────────────────────────────────────────────────────
   const createReqMutation = useMutation({
-    mutationFn: (payload) => api.post("/recruiting/requisitions", payload),
+    mutationFn: (payload) => {
+      const cleaned = {
+        ...payload,
+        departmentId: payload.departmentId || null,
+        positionId: payload.positionId || null,
+        salaryMin: payload.salaryMin ? parseFloat(payload.salaryMin) : null,
+        salaryMax: payload.salaryMax ? parseFloat(payload.salaryMax) : null,
+        vacanciesCount: parseInt(payload.vacanciesCount, 10) || 1,
+        targetStartDate: payload.targetStartDate || null,
+        description: payload.description || null,
+        justification: payload.justification || null,
+        reason: payload.reason || null,
+      };
+      return api.post("/recruiting/requisitions", cleaned);
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["job-requisitions"] });
       qc.invalidateQueries({ queryKey: ["recruiting-dashboard"] });
       toast.success("Job requisition submitted");
       setCreateReqModalOpen(false);
+      setReqForm({
+        title: "",
+        departmentId: "",
+        positionId: "",
+        vacanciesCount: 1,
+        employmentType: "FULL_TIME",
+        salaryMin: "",
+        salaryMax: "",
+        reason: "REPLACEMENT",
+        description: "",
+        justification: "",
+      });
+    },
+    onError: (err) => {
+      const errorMsg = err.response?.data?.errors?.length
+        ? err.response.data.errors.map((e) => e.message || `${e.field}: invalid`).join(" · ")
+        : err.response?.data?.message ?? "Failed to create requisition";
+      toast.error(errorMsg);
     },
   });
 
