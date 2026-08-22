@@ -40,6 +40,8 @@ export const emailWorker = new Worker<EmailJob>(
 );
 
 emailWorker.on('failed', (job, err) => logger.error(`Email job ${job?.id} failed:`, err));
+emailWorker.on('error', (err) => logger.debug(`EmailWorker notice: ${err.message}`));
+emailQueue.on('error', (err) => logger.debug(`EmailQueue notice: ${err.message}`));
 
 // ── Helper to queue emails ────────────────────────────────────────────────────
 export const sendEmail = async (data: EmailJob, options?: { delay?: number; attempts?: number }) => {

@@ -133,6 +133,8 @@ export const notifWorker = new Worker<NotifJob>(
 );
 
 notifWorker.on('failed', (job, err) => logger.error(`Notif job ${job?.id} failed:`, err));
+notifWorker.on('error', (err) => logger.debug(`NotifWorker notice: ${err.message}`));
+notifQueue.on('error', (err) => logger.debug(`NotifQueue notice: ${err.message}`));
 
 // ── Schedule recurring jobs ───────────────────────────────────────────────────
 export const scheduleRecurringJobs = async (schoolId: string) => {

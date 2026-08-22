@@ -6,6 +6,8 @@ import helmet from "helmet";
 import compression from "compression";
 import cookieParser from "cookie-parser";
 import morgan from "morgan";
+import path from "path";
+import os from "os";
 import { execSync } from "child_process";
 
 import { connectDatabase, db } from "./config/database";
@@ -159,6 +161,9 @@ app.get("/", (_, res) => {
     health: "/health",
   });
 });
+
+// ── Serve uploaded files ─────────────────────────────────────────────────────
+app.use("/uploads", express.static(path.join(os.tmpdir(), "timhirthub", "uploads")));
 
 // ── API Routes ───────────────────────────────────────────────────────────────
 // Public (no auth required)

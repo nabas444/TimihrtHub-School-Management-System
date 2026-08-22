@@ -58,12 +58,12 @@ export const telegramWorker = new Worker<TelegramPostJobData>(
       logger.warn(`Telegram posting failed for job ${job.id}: ${result.error}`);
     }
   },
-  { connection: redisSub, concurrency: 3 },
+  { connection: redisSub, concurrency: 1 },
 );
 
-telegramWorker.on("failed", (job, err) =>
-  logger.error(`Telegram post job ${job?.id} failed:`, err),
-);
+telegramWorker.on("failed", (job, err) => logger.error(`Telegram job ${job?.id} failed:`, err));
+telegramWorker.on("error", (err) => logger.debug(`TelegramWorker notice: ${err.message}`));
+telegramQueue.on("error", (err) => logger.debug(`TelegramQueue notice: ${err.message}`));
 
 // ── Helper to enqueue Telegram job posts ──────────────────────────────────────
 export const enqueueTelegramJobPost = async (
