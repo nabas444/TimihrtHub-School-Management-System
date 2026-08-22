@@ -7,10 +7,11 @@ import compression from "compression";
 import cookieParser from "cookie-parser";
 import morgan from "morgan";
 
-import { connectDatabase } from "./config/database";
+import { connectDatabase, db } from "./config/database";
 import { connectRedis } from "./config/redis";
 import { initSocket } from "./config/socket";
 import { logger } from "./utils/logger";
+import { seedDatabase } from "./prisma/seed";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
 import { apiLimiter } from "./middleware/rateLimiter";
 import { authenticate } from "./middleware/auth";
@@ -74,15 +75,37 @@ app.set("trust proxy", 1);
 app.use(
   cors({
     origin: (origin, callback) => {
-      const allowed = (process.env.CLIENT_URL ?? "http://localhost:3000")
+      // Allow requests with no origin (like server-to-server, curl, mobile native)
+      if (!origin) return callback(null, true);
+
+      const clientEnv = process.env.CLIENT_URL ?? "http://localhost:3000";
+      const allowedOrigins = clientEnv
         .split(",")
-        .map((url) => url.trim());
-      if (!origin || allowed.includes(origin)) callback(null, true);
-      else callback(new Error(`CORS blocked: ${origin}`));
+        .map((url) => url.trim().replace(/\/$/, ""));
+
+      const cleanOrigin = origin.replace(/\/$/, "");
+
+      const isAllowed = allowedOrigins.some((allowed) => {
+        if (!allowed) return false;
+        if (cleanOrigin === allowed) return true;
+        // Allow Vercel preview / deployment subdomains
+        if (cleanOrigin.includes("vercel.app")) return true;
+        if (allowed.includes("localhost") && cleanOrigin.includes("localhost")) return true;
+        if (allowed === "*") return true;
+        return false;
+      });
+
+      if (isAllowed) {
+        callback(null, true);
+      } else {
+        logger.warn(`⚠️ CORS blocked origin: ${origin} (allowed: ${allowedOrigins.join(", ")})`);
+        callback(null, false);
+      }
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
+    exposedHeaders: ["Set-Cookie"],
   }),
 );
 
@@ -206,6 +229,18 @@ const start = async () => {
   try {
     await connectDatabase();
     await connectRedis();
+
+    // Auto-seed if database is brand new and empty (e.g. Render Free Tier without shell)
+    try {
+      const schoolCount = await db.school.count();
+      if (schoolCount === 0) {
+        logger.info("⚡ Empty database detected — running initial seed...");
+        await seedDatabase(db);
+        logger.info("✅ Database successfully initialized with demo school and default users");
+      }
+    } catch (seedErr) {
+      logger.warn("Auto-seed check encountered non-fatal error:", seedErr);
+    }
 
     // Start background deadline engine (periodic offline evaluation & notification dispatch)
     startDeadlineEngine(5);
