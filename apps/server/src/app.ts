@@ -6,6 +6,7 @@ import helmet from "helmet";
 import compression from "compression";
 import cookieParser from "cookie-parser";
 import morgan from "morgan";
+import { execSync } from "child_process";
 
 import { connectDatabase, db } from "./config/database";
 import { connectRedis } from "./config/redis";
@@ -227,6 +228,18 @@ const PORT = parseInt(process.env.PORT ?? "5000");
 
 const start = async () => {
   try {
+    // 1. Sync PostgreSQL schema automatically to ensure all columns/tables exist
+    try {
+      logger.info("🔄 Verifying and synchronizing database schema with Prisma...");
+      execSync("npx prisma db push --accept-data-loss", {
+        stdio: "inherit",
+        env: process.env,
+      });
+      logger.info("✅ Database schema is 100% synchronized");
+    } catch (syncErr) {
+      logger.warn("⚠️ Schema sync notification:", syncErr);
+    }
+
     await connectDatabase();
     await connectRedis();
 
